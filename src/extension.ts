@@ -31,16 +31,18 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel
   ): Promise<void> {
+    const hugoContext = await findHugoContext(document.uri);
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, "media"),
         vscode.Uri.file(path.dirname(document.uri.fsPath)),
+        ...(hugoContext ? [hugoContext.rootUri] : []),
         ...(vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? [])
       ]
     };
 
-    webviewPanel.webview.html = this.getHtml(webviewPanel.webview, document);
+    webviewPanel.webview.html = this.getHtml(webviewPanel.webview, document, hugoContext);
 
     const sendDocument = (): void => {
       void webviewPanel.webview.postMessage({
@@ -77,7 +79,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           await this.pickImage(document, webviewPanel.webview);
           break;
         case "resolveImages":
-          await this.resolveImages(document, webviewPanel.webview, message.paths);
+          await this.resolveImages(document, webviewPanel.webview, message.paths, hugoContext);
           break;
       }
     });
@@ -127,7 +129,8 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private async resolveImages(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    paths: string[]
+    paths: string[],
+    hugoContext?: HugoContext
   ): Promise<void> {
     const previews = await Promise.all(paths.map(async (markdownPath) => {
       if (/^(?:data:|https?:\/\/)/i.test(markdownPath)) {
@@ -136,7 +139,12 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
       try {
         const decodedPath = decodeURIComponent(markdownPath);
-        const imageUri = vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodedPath));
+        const imageUri = markdownPath.startsWith("/") && hugoContext
+          ? resolveHugoStaticUri(hugoContext.rootUri, decodedPath)
+          : vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodedPath));
+        if (!imageUri) {
+          throw new Error("Image path is outside the Hugo static directory.");
+        }
         const imageBytes = await vscode.workspace.fs.readFile(imageUri);
         return {
           path: markdownPath,
@@ -150,19 +158,26 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     await webview.postMessage({ type: "imagePreviews", previews });
   }
 
-  private getHtml(webview: vscode.Webview, document: vscode.TextDocument): string {
+  private getHtml(webview: vscode.Webview, document: vscode.TextDocument, hugoContext?: HugoContext): string {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "media", "editor.js"));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "media", "editor.css"));
     const nonce = getNonce();
     const documentBaseUri = webview.asWebviewUri(vscode.Uri.file(`${path.dirname(document.uri.fsPath)}${path.sep}`));
+    const projectStyles = hugoContext?.cssUris
+      .map((uri) => `<link rel="stylesheet" href="${webview.asWebviewUri(uri)}">`)
+      .join("\n") ?? "";
+    const hugoLabel = hugoContext
+      ? `<span class="project-context" title="${escapeHtml(hugoContext.rootUri.fsPath)}">Hugo: ${escapeHtml(hugoContext.name)}</span>`
+      : "";
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <base href="${documentBaseUri}">
+  ${projectStyles}
   <link rel="stylesheet" href="${styleUri}">
   <title>${escapeHtml(path.basename(document.uri.fsPath))}</title>
 </head>
@@ -171,8 +186,11 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     <div class="mode-switch" role="group" aria-label="Editor mode">
       <button id="editMode" class="icon-button" type="button" title="Edit document" aria-label="Edit document">&#9998;</button>
       <button id="closeEditButton" class="icon-button hidden" type="button" title="Close editing" aria-label="Close editing">&#10005;</button>
+      <button id="viewSourceMode" type="button">Plain Text</button>
+      <button id="viewVisualMode" class="hidden" type="button">Visual</button>
       <button id="sourceMode" class="hidden" type="button">Plain Text</button>
       <button id="visualEditMode" class="hidden" type="button">Visual</button>
+      ${hugoLabel}
     </div>
     <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Formatting">
       <select id="blockStyle" aria-label="Block style" title="Block style">
@@ -201,7 +219,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     </div>
   </header>
   <main>
-    <div id="visualEditor" class="editor visual-editor" contenteditable="false" spellcheck="true" aria-label="Markdown document"></div>
+    <article id="visualEditor" class="editor visual-editor content markdown-body post-content" contenteditable="false" spellcheck="true" aria-label="Markdown document"></article>
     <textarea id="sourceEditor" class="editor source-editor hidden" spellcheck="false" aria-label="Plain text Markdown editor"></textarea>
   </main>
   <dialog id="linkDialog">
@@ -319,4 +337,101 @@ function getImageMimeType(uri: vscode.Uri): string {
     default:
       return "application/octet-stream";
   }
+}
+
+interface HugoContext {
+  rootUri: vscode.Uri;
+  name: string;
+  cssUris: vscode.Uri[];
+}
+
+const HUGO_CONFIG_NAMES = [
+  "hugo.toml",
+  "hugo.yaml",
+  "hugo.yml",
+  "hugo.json",
+  "config.toml",
+  "config.yaml",
+  "config.yml",
+  "config.json",
+  "config/_default/hugo.toml",
+  "config/_default/hugo.yaml",
+  "config/_default/hugo.yml",
+  "config/_default/hugo.json"
+];
+
+async function findHugoContext(documentUri: vscode.Uri): Promise<HugoContext | undefined> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(documentUri);
+  if (!workspaceFolder || documentUri.scheme !== "file" || !vscode.workspace.isTrusted) {
+    return undefined;
+  }
+
+  let directory = path.dirname(documentUri.fsPath);
+  const workspaceRoot = workspaceFolder.uri.fsPath;
+  while (isPathWithin(directory, workspaceRoot)) {
+    const configUri = await findFirstExistingFile(directory, HUGO_CONFIG_NAMES);
+    if (configUri) {
+      const theme = await readHugoTheme(configUri);
+      const rootUri = vscode.Uri.file(directory);
+      return {
+        rootUri,
+        name: path.basename(directory),
+        cssUris: await findHugoCss(rootUri, theme)
+      };
+    }
+
+    if (path.resolve(directory) === path.resolve(workspaceRoot)) {
+      break;
+    }
+    directory = path.dirname(directory);
+  }
+  return undefined;
+}
+
+async function findFirstExistingFile(directory: string, filenames: string[]): Promise<vscode.Uri | undefined> {
+  for (const filename of filenames) {
+    const uri = vscode.Uri.file(path.join(directory, filename));
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type === vscode.FileType.File) {
+        return uri;
+      }
+    } catch {
+      // Continue searching for another supported Hugo config filename.
+    }
+  }
+  return undefined;
+}
+
+async function readHugoTheme(configUri: vscode.Uri): Promise<string | undefined> {
+  try {
+    const config = Buffer.from(await vscode.workspace.fs.readFile(configUri)).toString("utf8");
+    const match = config.match(/(?:^|\n)\s*theme\s*(?:=|:)\s*["']?([^"'\r\n#]+)["']?/i);
+    return match?.[1].trim().replace(/[\],]$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+async function findHugoCss(rootUri: vscode.Uri, theme?: string): Promise<vscode.Uri[]> {
+  const patterns = [
+    ...(theme ? [`themes/${theme}/static/**/*.css`, `themes/${theme}/assets/**/*.css`] : []),
+    "static/**/*.css",
+    "assets/**/*.css"
+  ];
+  const results = await Promise.all(patterns.map((pattern) =>
+    vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, pattern), "**/node_modules/**", 40)
+  ));
+  return [...new Map(results.flat().map((uri) => [uri.toString(), uri])).values()];
+}
+
+function isPathWithin(candidate: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function resolveHugoStaticUri(rootUri: vscode.Uri, markdownPath: string): vscode.Uri | undefined {
+  const staticRoot = path.join(rootUri.fsPath, "static");
+  const candidate = path.resolve(staticRoot, markdownPath.replace(/^[/\\]+/, ""));
+  return isPathWithin(candidate, staticRoot) ? vscode.Uri.file(candidate) : undefined;
 }

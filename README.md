@@ -5,6 +5,7 @@ A VS Code extension by **Eric Haddan** for reading and editing Markdown files in
 ## Features
 
 - Open Markdown in a read-only **View** mode by default.
+- Toggle between read-only visual and plain-text views without entering Edit mode.
 - Click the pencil button to begin editing, then close editing to save or discard the draft.
 - Format headings from level 1 through 6.
 - Apply bold, italic, strikethrough, quotes, code blocks, links, lists, and horizontal rules.
@@ -13,6 +14,19 @@ A VS Code extension by **Eric Haddan** for reading and editing Markdown files in
 - Right-click an image while editing to reopen and change its image settings.
 - Preserve the approximate caret and scroll location when switching between visual and plain-text editing.
 - Keep the underlying document as portable Markdown.
+
+## Hugo Projects
+
+When a Markdown file is inside a trusted Hugo workspace, the editor automatically
+detects the nearest standard Hugo configuration file.
+
+- Loads plain CSS files from project and active-theme `static` and `assets` folders.
+- Resolves root-relative image paths such as `/images/photo.png` from Hugo's `static` folder.
+- Hides YAML or TOML front matter in visual modes while preserving it in the Markdown source.
+- Displays a Hugo project badge in the editor toolbar when detection succeeds.
+
+This built-in preview does not run Hugo, compile Sass, or execute templates and
+shortcodes. Complex theme rendering may therefore differ from the generated site.
 
 ## Usage
 

@@ -65,6 +65,17 @@ button.active {
   align-items: center;
 }
 
+.project-context {
+  align-self: center;
+  padding: 3px 7px;
+  border: 1px solid var(--vscode-badge-background);
+  border-radius: 10px;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  font-size: 11px;
+  line-height: 1;
+}
+
 .divider {
   width: 1px;
   height: 22px;
@@ -195,6 +206,10 @@ dialog select {
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
   line-height: 1.5;
+}
+
+.source-editor:read-only {
+  cursor: default;
 }
 
 .hidden {

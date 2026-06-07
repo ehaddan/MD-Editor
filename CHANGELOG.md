@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.4.0
+
+- Added a read-only Plain Text toggle in View mode.
+- Preserved caret and scroll-location synchronization between both read-only views.
+
+## 0.3.0
+
+- Added automatic Hugo project detection in trusted workspaces.
+- Added project and active-theme CSS loading from Hugo `static` and `assets` folders.
+- Added Hugo `static` resolution for root-relative image paths.
+- Added visual front-matter hiding with source preservation.
+
 ## 0.2.0
 
 - Added right-click editing for existing image settings.

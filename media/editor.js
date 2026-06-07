@@ -4,6 +4,8 @@
   const sourceEditor = document.getElementById("sourceEditor");
   const editMode = document.getElementById("editMode");
   const closeEditButton = document.getElementById("closeEditButton");
+  const viewSourceMode = document.getElementById("viewSourceMode");
+  const viewVisualMode = document.getElementById("viewVisualMode");
   const sourceMode = document.getElementById("sourceMode");
   const visualEditMode = document.getElementById("visualEditMode");
   const toolbar = document.getElementById("toolbar");
@@ -33,6 +35,7 @@
   let savedRange;
   let pendingImage;
   let editingImage;
+  let frontMatter = "";
 
   function escapeHtml(value) {
     return value
@@ -152,6 +155,27 @@
     return html.join("\n") || "<p><br></p>";
   }
 
+  function splitFrontMatter(markdown) {
+    const normalized = markdown.replace(/\r\n/g, "\n");
+    const delimiter = normalized.startsWith("---\n") ? "---" : normalized.startsWith("+++\n") ? "+++" : "";
+    if (!delimiter) return { frontMatter: "", body: markdown };
+
+    const closingIndex = normalized.indexOf(`\n${delimiter}\n`, delimiter.length + 1);
+    if (closingIndex < 0) return { frontMatter: "", body: markdown };
+    const end = closingIndex + delimiter.length + 2;
+    return {
+      frontMatter: normalized.slice(0, end),
+      body: normalized.slice(end)
+    };
+  }
+
+  function renderVisual(markdown) {
+    const parts = splitFrontMatter(markdown);
+    frontMatter = parts.frontMatter;
+    visualEditor.innerHTML = markdownToHtml(parts.body);
+    refreshImagePreviews();
+  }
+
   function refreshImagePreviews() {
     const paths = Array.from(visualEditor.querySelectorAll("img[data-markdown-path]"))
       .map((image) => image.dataset.markdownPath)
@@ -233,7 +257,8 @@
         blocks.push(content);
       }
     }
-    return blocks.join("\n\n").replace(/\n{3,}/g, "\n\n");
+    const body = blocks.join("\n\n").replace(/\n{3,}/g, "\n\n");
+    return frontMatter ? `${frontMatter}${body}` : body;
   }
 
   function scheduleEdit(markdown) {
@@ -246,39 +271,48 @@
     if (nextMode === mode) return;
 
     const location = captureEditorLocation();
-    if (nextMode === "edit" && mode === "view") {
+    if (nextMode === "edit" && (mode === "view" || mode === "view-source")) {
       currentMarkdown = savedMarkdown;
       draftDirty = false;
     }
-    if (nextMode === "source") {
+    if (nextMode === "source" || nextMode === "view-source") {
       if (mode === "edit") {
         currentMarkdown = htmlToMarkdown();
+      }
+      if (nextMode === "view-source") {
+        currentMarkdown = savedMarkdown;
       }
       sourceEditor.value = currentMarkdown;
     } else {
       if (mode === "source") {
         currentMarkdown = sourceEditor.value;
       }
-      visualEditor.innerHTML = markdownToHtml(currentMarkdown);
-      refreshImagePreviews();
+      renderVisual(currentMarkdown);
     }
 
     mode = nextMode;
-    const isView = mode === "view";
+    const isView = mode === "view" || mode === "view-source";
+    const isVisualView = mode === "view";
     const isEdit = mode === "edit";
-    const isSource = mode === "source";
+    const isSource = mode === "source" || mode === "view-source";
+    const isViewSource = mode === "view-source";
 
     visualEditor.classList.toggle("hidden", isSource);
     sourceEditor.classList.toggle("hidden", !isSource);
+    sourceEditor.readOnly = isViewSource;
     visualEditor.contentEditable = isEdit ? "true" : "false";
     toolbar.classList.toggle("hidden", !isEdit);
     editMode.classList.toggle("hidden", !isView);
     closeEditButton.classList.toggle("hidden", isView);
+    viewSourceMode.classList.toggle("hidden", !isVisualView);
+    viewVisualMode.classList.toggle("hidden", !isViewSource);
     sourceMode.classList.toggle("hidden", !isEdit);
-    visualEditMode.classList.toggle("hidden", !isSource);
+    visualEditMode.classList.toggle("hidden", !isSource || isViewSource);
+    viewSourceMode.classList.toggle("active", isViewSource);
+    viewVisualMode.classList.toggle("active", isVisualView);
     sourceMode.classList.toggle("active", isSource);
     visualEditMode.classList.toggle("active", isEdit);
-    status.textContent = `${isView ? "View" : isEdit ? "Edit" : "Plain text"} mode${!isView && draftDirty ? " | Unsaved changes" : ""}`;
+    status.textContent = `${isView ? isViewSource ? "View plain text" : "View" : isEdit ? "Edit" : "Plain text"} mode${!isView && draftDirty ? " | Unsaved changes" : ""}`;
     (isSource ? sourceEditor : visualEditor).focus();
     restoreEditorLocation(location, isSource);
   }
@@ -337,7 +371,7 @@
   }
 
   function captureEditorLocation() {
-    if (mode === "source") {
+    if (mode === "source" || mode === "view-source") {
       const length = Math.max(sourceEditor.value.length, 1);
       const scrollRange = Math.max(sourceEditor.scrollHeight - sourceEditor.clientHeight, 1);
       return {
@@ -403,9 +437,13 @@
 
   editMode.addEventListener("click", () => setMode("edit"));
   closeEditButton.addEventListener("click", requestCloseEditing);
+  viewSourceMode.addEventListener("click", () => setMode("view-source"));
+  viewVisualMode.addEventListener("click", () => setMode("view"));
   sourceMode.addEventListener("click", () => setMode("source"));
   visualEditMode.addEventListener("click", () => setMode("edit"));
-  sourceEditor.addEventListener("input", () => scheduleEdit(sourceEditor.value));
+  sourceEditor.addEventListener("input", () => {
+    if (mode === "source") scheduleEdit(sourceEditor.value);
+  });
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
   });
@@ -471,12 +509,11 @@
     if (message.type === "documentChanged" && message.text !== savedMarkdown) {
       applyingExternalChange = true;
       savedMarkdown = message.text;
-      if (mode === "view") {
+      if (mode === "view" || mode === "view-source") {
         currentMarkdown = savedMarkdown;
         draftDirty = false;
         sourceEditor.value = currentMarkdown;
-        visualEditor.innerHTML = markdownToHtml(currentMarkdown);
-        refreshImagePreviews();
+        if (mode === "view") renderVisual(currentMarkdown);
       }
       applyingExternalChange = false;
     } else if (message.type === "imageSelected") {
