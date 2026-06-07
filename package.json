@@ -1,0 +1,72 @@
+{
+  "name": "eric-haddan-markdown-editor",
+  "displayName": "Markdown Reader & WYSIWYG Editor",
+  "description": "Read and edit Markdown in plain text or WYSIWYG mode.",
+  "version": "0.1.0",
+  "publisher": "eric-haddan",
+  "icon": "icon.png",
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "pricing": "Free",
+  "author": {
+    "name": "Eric Haddan"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Formatters"
+  ],
+  "keywords": [
+    "markdown",
+    "wysiwyg",
+    "editor",
+    "preview",
+    "reader",
+    "md"
+  ],
+  "galleryBanner": {
+    "color": "#14213d",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onCustomEditor:ericHaddan.markdownEditor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "ericHaddan.markdownEditor",
+        "displayName": "Markdown WYSIWYG Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ericHaddan.markdownEditor.open",
+        "title": "Open with Markdown WYSIWYG Editor"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.6.2",
+    "typescript": "^5.5.0"
+  }
+}
