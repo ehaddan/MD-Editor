@@ -19,6 +19,7 @@
   const imageTitle = document.getElementById("imageTitle");
   const imageWidth = document.getElementById("imageWidth");
   const imageAlign = document.getElementById("imageAlign");
+  const insertImageButton = document.getElementById("insertImageButton");
   const unsavedDialog = document.getElementById("unsavedDialog");
   const cancelCloseButton = document.getElementById("cancelCloseButton");
   const discardChangesButton = document.getElementById("discardChangesButton");
@@ -31,6 +32,7 @@
   let applyingExternalChange = false;
   let savedRange;
   let pendingImage;
+  let editingImage;
 
   function escapeHtml(value) {
     return value
@@ -243,6 +245,7 @@
   function setMode(nextMode) {
     if (nextMode === mode) return;
 
+    const location = captureEditorLocation();
     if (nextMode === "edit" && mode === "view") {
       currentMarkdown = savedMarkdown;
       draftDirty = false;
@@ -277,6 +280,7 @@
     visualEditMode.classList.toggle("active", isEdit);
     status.textContent = `${isView ? "View" : isEdit ? "Edit" : "Plain text"} mode${!isView && draftDirty ? " | Unsaved changes" : ""}`;
     (isSource ? sourceEditor : visualEditor).focus();
+    restoreEditorLocation(location, isSource);
   }
 
   function draftMarkdown() {
@@ -332,6 +336,71 @@
     return selection.getRangeAt(0);
   }
 
+  function captureEditorLocation() {
+    if (mode === "source") {
+      const length = Math.max(sourceEditor.value.length, 1);
+      const scrollRange = Math.max(sourceEditor.scrollHeight - sourceEditor.clientHeight, 1);
+      return {
+        progress: sourceEditor.selectionStart / length,
+        scrollProgress: sourceEditor.scrollTop / scrollRange
+      };
+    }
+
+    const range = selectionRangeInsideVisualEditor();
+    const before = document.createRange();
+    before.selectNodeContents(visualEditor);
+    if (range) before.setEnd(range.startContainer, range.startOffset);
+    const textLength = Math.max(visualEditor.textContent.length, 1);
+    const scrollRange = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+    return {
+      progress: range ? before.toString().length / textLength : window.scrollY / scrollRange,
+      scrollProgress: window.scrollY / scrollRange
+    };
+  }
+
+  function restoreEditorLocation(location, isSource) {
+    requestAnimationFrame(() => {
+      if (isSource) {
+        const offset = Math.round(location.progress * sourceEditor.value.length);
+        sourceEditor.setSelectionRange(offset, offset);
+        const scrollRange = Math.max(sourceEditor.scrollHeight - sourceEditor.clientHeight, 0);
+        sourceEditor.scrollTop = location.scrollProgress * scrollRange;
+        return;
+      }
+
+      const targetOffset = Math.round(location.progress * visualEditor.textContent.length);
+      const walker = document.createTreeWalker(visualEditor, NodeFilter.SHOW_TEXT);
+      let remaining = targetOffset;
+      let targetNode;
+      while (walker.nextNode()) {
+        targetNode = walker.currentNode;
+        if (remaining <= targetNode.textContent.length) break;
+        remaining -= targetNode.textContent.length;
+      }
+      if (targetNode) {
+        const range = document.createRange();
+        range.setStart(targetNode, Math.min(remaining, targetNode.textContent.length));
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      const scrollRange = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+      window.scrollTo(0, location.scrollProgress * scrollRange);
+    });
+  }
+
+  function openImageDialog(image) {
+    editingImage = image || null;
+    insertImageButton.textContent = editingImage ? "Save Changes" : "Insert Image";
+    imageAlt.value = image?.getAttribute("alt") || "";
+    imageTitle.value = image?.getAttribute("title") || "";
+    imageWidth.value = image?.dataset.width || "";
+    imageAlign.value = image?.dataset.align || "";
+    imageDialog.showModal();
+    imageAlt.focus();
+  }
+
   editMode.addEventListener("click", () => setMode("edit"));
   closeEditButton.addEventListener("click", requestCloseEditing);
   sourceMode.addEventListener("click", () => setMode("source"));
@@ -339,6 +408,15 @@
   sourceEditor.addEventListener("input", () => scheduleEdit(sourceEditor.value));
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
+  });
+  visualEditor.addEventListener("contextmenu", (event) => {
+    if (mode !== "edit") return;
+    const image = event.target.closest?.("img[data-markdown-path]");
+    if (!image) return;
+    event.preventDefault();
+    savedRange = null;
+    pendingImage = null;
+    openImageDialog(image);
   });
 
   toolbar.querySelectorAll("[data-command]").forEach((button) => {
@@ -403,12 +481,7 @@
       applyingExternalChange = false;
     } else if (message.type === "imageSelected") {
       pendingImage = message;
-      imageAlt.value = "";
-      imageTitle.value = "";
-      imageWidth.value = "";
-      imageAlign.value = "";
-      imageDialog.showModal();
-      imageAlt.focus();
+      openImageDialog(null);
     } else if (message.type === "imagePreviews") {
       for (const preview of message.previews) {
         if (!preview.previewUri) continue;
@@ -423,36 +496,54 @@
 
   imageDialog.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!pendingImage) return;
+    if (!pendingImage && !editingImage) return;
 
     visualEditor.focus();
-    const range = restoreSavedRange();
-    const image = document.createElement("img");
-    image.src = pendingImage.previewUri;
+    const range = editingImage ? null : restoreSavedRange();
+    const image = editingImage || document.createElement("img");
+    if (pendingImage) {
+      image.src = pendingImage.previewUri;
+      image.dataset.markdownPath = pendingImage.path;
+    }
     image.alt = imageAlt.value.trim();
-    image.dataset.markdownPath = pendingImage.path;
-    if (imageTitle.value.trim()) image.title = imageTitle.value.trim();
+    if (imageTitle.value.trim()) {
+      image.title = imageTitle.value.trim();
+    } else {
+      image.removeAttribute("title");
+    }
     if (imageWidth.value) {
       image.dataset.width = imageWidth.value;
       image.style.width = imageWidth.value;
+    } else {
+      delete image.dataset.width;
+      image.style.removeProperty("width");
     }
-    if (imageAlign.value) image.dataset.align = imageAlign.value;
-    if (range) {
+    if (imageAlign.value) {
+      image.dataset.align = imageAlign.value;
+    } else {
+      delete image.dataset.align;
+    }
+    if (!editingImage && range) {
       range.deleteContents();
       range.insertNode(image);
       range.setStartAfter(image);
       range.collapse(true);
-    } else {
+    } else if (!editingImage) {
       visualEditor.appendChild(image);
     }
     pendingImage = null;
+    editingImage = null;
     savedRange = null;
     imageDialog.close();
     scheduleEdit(htmlToMarkdown());
   });
 
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => button.closest("dialog").close());
+    button.addEventListener("click", () => {
+      pendingImage = null;
+      editingImage = null;
+      button.closest("dialog").close();
+    });
   });
 
   unsavedDialog.addEventListener("submit", (event) => {

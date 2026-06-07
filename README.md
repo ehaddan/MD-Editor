@@ -10,6 +10,8 @@ A VS Code extension by **Eric Haddan** for reading and editing Markdown files in
 - Apply bold, italic, strikethrough, quotes, code blocks, links, lists, and horizontal rules.
 - Insert links with text, URL, and optional tooltip title.
 - Select an image file and insert it using a relative path, with alt text, title, width, and alignment options.
+- Right-click an image while editing to reopen and change its image settings.
+- Preserve the approximate caret and scroll location when switching between visual and plain-text editing.
 - Keep the underlying document as portable Markdown.
 
 ## Usage

@@ -120,6 +120,10 @@ main {
   max-width: 100%;
 }
 
+.visual-editor[contenteditable="true"] img {
+  cursor: context-menu;
+}
+
 .visual-editor img[data-align="left"] {
   display: block;
   margin-right: auto;

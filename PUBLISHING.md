@@ -19,12 +19,13 @@ npm run compile
 npm run package
 ```
 
-This produces `eric-haddan-markdown-editor-0.1.0.vsix`.
+This produces a versioned VSIX such as
+`eric-haddan-markdown-editor-0.2.0.vsix`.
 
 Install the VSIX locally for a final test:
 
 ```powershell
-code --install-extension .\eric-haddan-markdown-editor-0.1.0.vsix
+code --install-extension .\eric-haddan-markdown-editor-0.2.0.vsix
 ```
 
 ## Publish
@@ -41,7 +42,7 @@ Publish the version declared in `package.json`:
 npm run publish
 ```
 
-Alternatively, upload `eric-haddan-markdown-editor-0.1.0.vsix` from the
+Alternatively, upload the newly generated `.vsix` file from the
 publisher management page by selecting **New extension > Visual Studio Code**.
 
 For later releases, update `CHANGELOG.md` and increment the version first:
