@@ -12,6 +12,7 @@
   const blockStyle = document.getElementById("blockStyle");
   const linkButton = document.getElementById("linkButton");
   const imageButton = document.getElementById("imageButton");
+  const shortcodeButton = document.getElementById("shortcodeButton");
   const linkDialog = document.getElementById("linkDialog");
   const linkText = document.getElementById("linkText");
   const linkUrl = document.getElementById("linkUrl");
@@ -25,7 +26,11 @@
   const unsavedDialog = document.getElementById("unsavedDialog");
   const cancelCloseButton = document.getElementById("cancelCloseButton");
   const discardChangesButton = document.getElementById("discardChangesButton");
+  const shortcodeDialog = document.getElementById("shortcodeDialog");
+  const shortcodeSelect = document.getElementById("shortcodeSelect");
+  const shortcodeFields = document.getElementById("shortcodeFields");
   const status = document.getElementById("status");
+  const hugoShortcodes = Array.isArray(window.hugoShortcodes) ? window.hugoShortcodes : [];
 
   let mode = "view";
   let currentMarkdown = "";
@@ -48,6 +53,16 @@
 
   function inlineMarkdown(value) {
     let output = escapeHtml(value);
+    output = output.replace(
+      /\{\{(?:&lt;|%)\s*\/?[^{}]*?\s*(?:&gt;|%)\}\}/g,
+      (shortcode) => {
+        const label = shortcode
+          .replace(/&lt;|&gt;|%|\{\{|}}|\//g, "")
+          .trim()
+          .split(/\s+/)[0] || "shortcode";
+        return `<span class="hugo-shortcode" contenteditable="false" data-shortcode-markup="${shortcode}">Hugo shortcode: ${label}</span>`;
+      }
+    );
     output = output.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^&]*?)&quot;)?\)(?:\{([^}]*)\})?/g,
       (_match, alt, imagePath, title, attributes) => {
@@ -218,6 +233,11 @@
           ].filter(Boolean).join(" ");
           return `![${element.getAttribute("alt") || ""}](${element.dataset.markdownPath || element.getAttribute("src") || ""}${title ? ` "${title}"` : ""})${attributes ? `{${attributes}}` : ""}`;
         }
+      case "span":
+        if (element.classList.contains("hugo-shortcode")) {
+          return element.dataset.shortcodeMarkup || "";
+        }
+        return content;
       case "br":
         return "\n";
       default:
@@ -435,6 +455,70 @@
     imageAlt.focus();
   }
 
+  function buildShortcodeFields() {
+    const shortcode = hugoShortcodes.find((item) => item.name === shortcodeSelect.value);
+    shortcodeFields.replaceChildren();
+    if (!shortcode) return;
+
+    for (const position of shortcode.positionalParams) {
+      shortcodeFields.appendChild(createShortcodeField(`Argument ${Number(position) + 1}`, `position-${position}`));
+    }
+    for (const param of shortcode.params) {
+      shortcodeFields.appendChild(createShortcodeField(param, `param-${param}`));
+    }
+    if (shortcode.hasInner) {
+      const label = document.createElement("label");
+      label.textContent = "Inner content";
+      const textarea = document.createElement("textarea");
+      textarea.dataset.shortcodeInner = "true";
+      textarea.rows = 5;
+      label.appendChild(textarea);
+      shortcodeFields.appendChild(label);
+    }
+    if (!shortcode.params.length && !shortcode.positionalParams.length && !shortcode.hasInner) {
+      const note = document.createElement("p");
+      note.className = "dialog-note";
+      note.textContent = "This shortcode has no detected properties.";
+      shortcodeFields.appendChild(note);
+    }
+  }
+
+  function createShortcodeField(labelText, key) {
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.dataset.shortcodeField = key;
+    label.appendChild(input);
+    return label;
+  }
+
+  function escapeShortcodeValue(value) {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function buildShortcodeMarkup() {
+    const shortcode = hugoShortcodes.find((item) => item.name === shortcodeSelect.value);
+    if (!shortcode) return "";
+
+    const argumentsList = [];
+    const positionalValues = [];
+    for (const input of shortcodeFields.querySelectorAll("[data-shortcode-field]")) {
+      const value = input.value.trim();
+      const key = input.dataset.shortcodeField;
+      if (key.startsWith("position-")) {
+        positionalValues[Number(key.slice("position-".length))] = value;
+      } else if (value) {
+        argumentsList.push(`${key.slice("param-".length)}="${escapeShortcodeValue(value)}"`);
+      }
+    }
+    while (positionalValues.length && !positionalValues.at(-1)) positionalValues.pop();
+    argumentsList.unshift(...positionalValues.map((value) => `"${escapeShortcodeValue(value || "")}"`));
+    const opening = `{{< ${shortcode.name}${argumentsList.length ? ` ${argumentsList.join(" ")}` : ""} >}}`;
+    const inner = shortcodeFields.querySelector("[data-shortcode-inner]")?.value || "";
+    return shortcode.hasInner ? `${opening}\n${inner}\n{{< /${shortcode.name} >}}` : opening;
+  }
+
   editMode.addEventListener("click", () => setMode("edit"));
   closeEditButton.addEventListener("click", requestCloseEditing);
   viewSourceMode.addEventListener("click", () => setMode("view-source"));
@@ -502,6 +586,39 @@
   });
   imageButton.addEventListener("click", () => {
     vscode.postMessage({ type: "pickImage" });
+  });
+  shortcodeButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    savedRange = selectionRangeInsideVisualEditor();
+  });
+  shortcodeButton.addEventListener("click", () => {
+    buildShortcodeFields();
+    shortcodeDialog.showModal();
+  });
+  shortcodeSelect.addEventListener("change", buildShortcodeFields);
+  shortcodeDialog.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const markup = buildShortcodeMarkup();
+    if (!markup) return;
+
+    visualEditor.focus();
+    const range = restoreSavedRange();
+    const placeholder = document.createElement("span");
+    placeholder.className = "hugo-shortcode";
+    placeholder.contentEditable = "false";
+    placeholder.dataset.shortcodeMarkup = markup;
+    placeholder.textContent = `Hugo shortcode: ${shortcodeSelect.value}`;
+    if (range) {
+      range.deleteContents();
+      range.insertNode(placeholder);
+      range.setStartAfter(placeholder);
+      range.collapse(true);
+    } else {
+      visualEditor.appendChild(placeholder);
+    }
+    savedRange = null;
+    shortcodeDialog.close();
+    scheduleEdit(htmlToMarkdown());
   });
 
   window.addEventListener("message", (event) => {
@@ -582,6 +699,16 @@
       button.closest("dialog").close();
     });
   });
+
+  if (hugoShortcodes.length) {
+    shortcodeButton.classList.remove("hidden");
+    for (const shortcode of hugoShortcodes) {
+      const option = document.createElement("option");
+      option.value = shortcode.name;
+      option.textContent = shortcode.name;
+      shortcodeSelect.appendChild(option);
+    }
+  }
 
   unsavedDialog.addEventListener("submit", (event) => {
     event.preventDefault();

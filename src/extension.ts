@@ -169,6 +169,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const hugoLabel = hugoContext
       ? `<span class="project-context" title="${escapeHtml(hugoContext.rootUri.fsPath)}">Hugo: ${escapeHtml(hugoContext.name)}</span>`
       : "";
+    const shortcodeData = JSON.stringify(hugoContext?.shortcodes ?? []).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -216,6 +217,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <button class="icon-button" type="button" data-command="insertHorizontalRule" title="Horizontal rule" aria-label="Horizontal rule">&#8212;</button>
       <button id="linkButton" class="icon-button" type="button" title="Insert link" aria-label="Insert link">&#128279;</button>
       <button id="imageButton" class="icon-button" type="button" title="Insert image" aria-label="Insert image">&#128444;</button>
+      <button id="shortcodeButton" class="hidden" type="button" title="Insert Hugo shortcode">Shortcode</button>
     </div>
   </header>
   <main>
@@ -273,7 +275,19 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       </div>
     </form>
   </dialog>
+  <dialog id="shortcodeDialog">
+    <form method="dialog">
+      <h2>Insert Hugo Shortcode</h2>
+      <label>Shortcode<select id="shortcodeSelect"></select></label>
+      <div id="shortcodeFields" class="dynamic-fields"></div>
+      <div class="dialog-actions">
+        <button type="button" data-close-dialog>Cancel</button>
+        <button type="submit">Insert Shortcode</button>
+      </div>
+    </form>
+  </dialog>
   <div id="status" class="status">View mode</div>
+  <script nonce="${nonce}">window.hugoShortcodes = ${shortcodeData};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
@@ -343,6 +357,14 @@ interface HugoContext {
   rootUri: vscode.Uri;
   name: string;
   cssUris: vscode.Uri[];
+  shortcodes: HugoShortcode[];
+}
+
+interface HugoShortcode {
+  name: string;
+  params: string[];
+  positionalParams: string[];
+  hasInner: boolean;
 }
 
 const HUGO_CONFIG_NAMES = [
@@ -376,7 +398,8 @@ async function findHugoContext(documentUri: vscode.Uri): Promise<HugoContext | u
       return {
         rootUri,
         name: path.basename(directory),
-        cssUris: await findHugoCss(rootUri, theme)
+        cssUris: await findHugoCss(rootUri, theme),
+        shortcodes: await findHugoShortcodes(rootUri, theme)
       };
     }
 
@@ -423,6 +446,39 @@ async function findHugoCss(rootUri: vscode.Uri, theme?: string): Promise<vscode.
     vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, pattern), "**/node_modules/**", 40)
   ));
   return [...new Map(results.flat().map((uri) => [uri.toString(), uri])).values()];
+}
+
+async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<HugoShortcode[]> {
+  const patterns = [
+    ...(theme ? [`themes/${theme}/layouts/shortcodes/**/*.html`] : []),
+    "layouts/shortcodes/**/*.html"
+  ];
+  const files = (await Promise.all(patterns.map((pattern) =>
+    vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, pattern), "**/node_modules/**", 80)
+  ))).flat();
+
+  const definitions = await Promise.all(files.map(async (uri) => {
+    const template = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    const normalizedPath = uri.fsPath.replace(/\\/g, "/");
+    const marker = "/layouts/shortcodes/";
+    const name = normalizedPath.slice(normalizedPath.lastIndexOf(marker) + marker.length).replace(/\.html$/, "");
+    const params = [...template.matchAll(/\.Get\s+["']([^"']+)["']/g)].map((match) => match[1]);
+    params.push(...[...template.matchAll(/\.Params\.([A-Za-z][\w-]*)/g)].map((match) => match[1]));
+    params.push(...[...template.matchAll(/index\s+\.Params\s+["']([^"']+)["']/g)].map((match) => match[1]));
+    const positionalParams = [...template.matchAll(/\.Get\s+(\d+)/g)].map((match) => match[1]);
+    return {
+      name,
+      params: [...new Set(params)].sort(),
+      positionalParams: [...new Set(positionalParams)].sort((left, right) => Number(left) - Number(right)),
+      hasInner: /\.Inner\b/.test(template)
+    };
+  }));
+
+  const byName = new Map<string, HugoShortcode>();
+  for (const definition of definitions) {
+    byName.set(definition.name, definition);
+  }
+  return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function isPathWithin(candidate: string, parent: string): boolean {

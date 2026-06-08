@@ -23,10 +23,13 @@ detects the nearest standard Hugo configuration file.
 - Loads plain CSS files from project and active-theme `static` and `assets` folders.
 - Resolves root-relative image paths such as `/images/photo.png` from Hugo's `static` folder.
 - Hides YAML or TOML front matter in visual modes while preserving it in the Markdown source.
+- Discovers shortcodes from project and active-theme `layouts/shortcodes` folders.
+- Adds an **Insert Shortcode** tool with detected properties for named, positional, and inner-content values.
 - Displays a Hugo project badge in the editor toolbar when detection succeeds.
 
 This built-in preview does not run Hugo, compile Sass, or execute templates and
-shortcodes. Complex theme rendering may therefore differ from the generated site.
+shortcodes. Shortcodes are inserted and preserved as visual placeholders, so
+complex theme rendering may differ from the generated site.
 
 ## Usage
 

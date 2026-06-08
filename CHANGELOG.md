@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.5.0
+
+- Added Hugo shortcode discovery from project and active-theme `layouts/shortcodes` folders.
+- Added a dynamic Insert Shortcode dialog with detected named, positional, and inner-content fields.
+- Added visual shortcode placeholders that preserve Hugo shortcode markup.
+
 ## 0.4.0
 
 - Added a read-only Plain Text toggle in View mode.
