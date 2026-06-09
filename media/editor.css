@@ -65,17 +65,6 @@ button.active {
   align-items: center;
 }
 
-.project-context {
-  align-self: center;
-  padding: 3px 7px;
-  border: 1px solid var(--vscode-badge-background);
-  border-radius: 10px;
-  color: var(--vscode-badge-foreground);
-  background: var(--vscode-badge-background);
-  font-size: 11px;
-  line-height: 1;
-}
-
 .divider {
   width: 1px;
   height: 22px;
@@ -152,16 +141,43 @@ main {
 }
 
 .hugo-shortcode {
-  display: inline-block;
-  margin: 2px;
-  border: 1px solid var(--vscode-badge-background);
+  position: relative;
+  display: block;
+  margin: 8px 0;
+  border: 1px dashed var(--vscode-badge-background);
   border-radius: 4px;
-  padding: 2px 7px;
-  color: var(--vscode-badge-foreground);
-  background: var(--vscode-badge-background);
+  padding: 8px;
+  cursor: context-menu;
+}
+
+.hugo-shortcode:hover::after {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(620px, calc(100vw - 80px));
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  padding: 10px;
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  content: "Generated HTML\A\A" attr(data-generated-html);
   font-family: var(--vscode-editor-font-family);
   font-size: 12px;
-  cursor: default;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.hugo-shortcode:empty::before {
+  content: "Hugo shortcode";
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
 }
 
 dialog {
@@ -213,6 +229,12 @@ dialog textarea {
 .dynamic-fields {
   display: grid;
   gap: 12px;
+}
+
+.field-with-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
 }
 
 .dialog-note {

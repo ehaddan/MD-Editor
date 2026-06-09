@@ -36,9 +36,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, "media"),
-        vscode.Uri.file(path.dirname(document.uri.fsPath)),
-        ...(hugoContext ? [hugoContext.rootUri] : []),
-        ...(vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? [])
+        vscode.Uri.file(path.dirname(document.uri.fsPath))
       ]
     };
 
@@ -78,8 +76,11 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         case "pickImage":
           await this.pickImage(document, webviewPanel.webview);
           break;
+        case "pickShortcodeFile":
+          await this.pickShortcodeFile(document, webviewPanel.webview, message.field);
+          break;
         case "resolveImages":
-          await this.resolveImages(document, webviewPanel.webview, message.paths, hugoContext);
+          await this.resolveImages(document, webviewPanel.webview, message.paths);
           break;
       }
     });
@@ -126,11 +127,38 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     });
   }
 
+  private async pickShortcodeFile(
+    document: vscode.TextDocument,
+    webview: vscode.Webview,
+    field: string
+  ): Promise<void> {
+    const selection = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(path.dirname(document.uri.fsPath)),
+      openLabel: "Use File"
+    });
+
+    if (!selection?.[0]) {
+      return;
+    }
+
+    const documentDirectory = path.dirname(document.uri.fsPath);
+    let relativePath = path.relative(documentDirectory, selection[0].fsPath).replace(/\\/g, "/");
+    if (!relativePath.startsWith(".") && !relativePath.startsWith("/")) {
+      relativePath = `./${relativePath}`;
+    }
+
+    await webview.postMessage({
+      type: "shortcodeFileSelected",
+      field,
+      path: relativePath
+    });
+  }
+
   private async resolveImages(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    paths: string[],
-    hugoContext?: HugoContext
+    paths: string[]
   ): Promise<void> {
     const previews = await Promise.all(paths.map(async (markdownPath) => {
       if (/^(?:data:|https?:\/\/)/i.test(markdownPath)) {
@@ -139,12 +167,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
       try {
         const decodedPath = decodeURIComponent(markdownPath);
-        const imageUri = markdownPath.startsWith("/") && hugoContext
-          ? resolveHugoStaticUri(hugoContext.rootUri, decodedPath)
-          : vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodedPath));
-        if (!imageUri) {
-          throw new Error("Image path is outside the Hugo static directory.");
-        }
+        const imageUri = vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodedPath));
         const imageBytes = await vscode.workspace.fs.readFile(imageUri);
         return {
           path: markdownPath,
@@ -163,12 +186,6 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "media", "editor.css"));
     const nonce = getNonce();
     const documentBaseUri = webview.asWebviewUri(vscode.Uri.file(`${path.dirname(document.uri.fsPath)}${path.sep}`));
-    const projectStyles = hugoContext?.cssUris
-      .map((uri) => `<link rel="stylesheet" href="${webview.asWebviewUri(uri)}">`)
-      .join("\n") ?? "";
-    const hugoLabel = hugoContext
-      ? `<span class="project-context" title="${escapeHtml(hugoContext.rootUri.fsPath)}">Hugo: ${escapeHtml(hugoContext.name)}</span>`
-      : "";
     const shortcodeData = JSON.stringify(hugoContext?.shortcodes ?? []).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>
@@ -178,7 +195,6 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <base href="${documentBaseUri}">
-  ${projectStyles}
   <link rel="stylesheet" href="${styleUri}">
   <title>${escapeHtml(path.basename(document.uri.fsPath))}</title>
 </head>
@@ -191,7 +207,6 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <button id="viewVisualMode" class="hidden" type="button">Visual</button>
       <button id="sourceMode" class="hidden" type="button">Plain Text</button>
       <button id="visualEditMode" class="hidden" type="button">Visual</button>
-      ${hugoLabel}
     </div>
     <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Formatting">
       <select id="blockStyle" aria-label="Block style" title="Block style">
@@ -277,12 +292,12 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   </dialog>
   <dialog id="shortcodeDialog">
     <form method="dialog">
-      <h2>Insert Hugo Shortcode</h2>
+      <h2 id="shortcodeDialogTitle">Insert Hugo Shortcode</h2>
       <label>Shortcode<select id="shortcodeSelect"></select></label>
       <div id="shortcodeFields" class="dynamic-fields"></div>
       <div class="dialog-actions">
         <button type="button" data-close-dialog>Cancel</button>
-        <button type="submit">Insert Shortcode</button>
+        <button id="insertShortcodeButton" type="submit">Insert Shortcode</button>
       </div>
     </form>
   </dialog>
@@ -299,15 +314,17 @@ type EditorMessage =
   | { type: "edit"; text: string }
   | { type: "save"; text: string }
   | { type: "pickImage" }
+  | { type: "pickShortcodeFile"; field: string }
   | { type: "resolveImages"; paths: string[] };
 
 function isEditorMessage(value: unknown): value is EditorMessage {
   if (!value || typeof value !== "object" || !("type" in value)) {
     return false;
   }
-  const message = value as { type: unknown; text?: unknown; paths?: unknown };
+  const message = value as { type: unknown; text?: unknown; paths?: unknown; field?: unknown };
   return message.type === "ready"
     || message.type === "pickImage"
+    || (message.type === "pickShortcodeFile" && typeof message.field === "string")
     || (message.type === "edit" && typeof message.text === "string")
     || (message.type === "save" && typeof message.text === "string")
     || (message.type === "resolveImages"
@@ -354,9 +371,6 @@ function getImageMimeType(uri: vscode.Uri): string {
 }
 
 interface HugoContext {
-  rootUri: vscode.Uri;
-  name: string;
-  cssUris: vscode.Uri[];
   shortcodes: HugoShortcode[];
 }
 
@@ -365,6 +379,7 @@ interface HugoShortcode {
   params: string[];
   positionalParams: string[];
   hasInner: boolean;
+  template: string;
 }
 
 const HUGO_CONFIG_NAMES = [
@@ -396,9 +411,6 @@ async function findHugoContext(documentUri: vscode.Uri): Promise<HugoContext | u
       const theme = await readHugoTheme(configUri);
       const rootUri = vscode.Uri.file(directory);
       return {
-        rootUri,
-        name: path.basename(directory),
-        cssUris: await findHugoCss(rootUri, theme),
         shortcodes: await findHugoShortcodes(rootUri, theme)
       };
     }
@@ -436,18 +448,6 @@ async function readHugoTheme(configUri: vscode.Uri): Promise<string | undefined>
   }
 }
 
-async function findHugoCss(rootUri: vscode.Uri, theme?: string): Promise<vscode.Uri[]> {
-  const patterns = [
-    ...(theme ? [`themes/${theme}/static/**/*.css`, `themes/${theme}/assets/**/*.css`] : []),
-    "static/**/*.css",
-    "assets/**/*.css"
-  ];
-  const results = await Promise.all(patterns.map((pattern) =>
-    vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, pattern), "**/node_modules/**", 40)
-  ));
-  return [...new Map(results.flat().map((uri) => [uri.toString(), uri])).values()];
-}
-
 async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<HugoShortcode[]> {
   const patterns = [
     ...(theme ? [`themes/${theme}/layouts/shortcodes/**/*.html`] : []),
@@ -470,7 +470,8 @@ async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<
       name,
       params: [...new Set(params)].sort(),
       positionalParams: [...new Set(positionalParams)].sort((left, right) => Number(left) - Number(right)),
-      hasInner: /\.Inner\b/.test(template)
+      hasInner: /\.Inner\b/.test(template),
+      template
     };
   }));
 
@@ -484,10 +485,4 @@ async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<
 function isPathWithin(candidate: string, parent: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function resolveHugoStaticUri(rootUri: vscode.Uri, markdownPath: string): vscode.Uri | undefined {
-  const staticRoot = path.join(rootUri.fsPath, "static");
-  const candidate = path.resolve(staticRoot, markdownPath.replace(/^[/\\]+/, ""));
-  return isPathWithin(candidate, staticRoot) ? vscode.Uri.file(candidate) : undefined;
 }

@@ -27,8 +27,10 @@
   const cancelCloseButton = document.getElementById("cancelCloseButton");
   const discardChangesButton = document.getElementById("discardChangesButton");
   const shortcodeDialog = document.getElementById("shortcodeDialog");
+  const shortcodeDialogTitle = document.getElementById("shortcodeDialogTitle");
   const shortcodeSelect = document.getElementById("shortcodeSelect");
   const shortcodeFields = document.getElementById("shortcodeFields");
+  const insertShortcodeButton = document.getElementById("insertShortcodeButton");
   const status = document.getElementById("status");
   const hugoShortcodes = Array.isArray(window.hugoShortcodes) ? window.hugoShortcodes : [];
 
@@ -40,6 +42,7 @@
   let savedRange;
   let pendingImage;
   let editingImage;
+  let editingShortcode;
   let frontMatter = "";
 
   function escapeHtml(value) {
@@ -51,17 +54,12 @@
       .replace(/'/g, "&#039;");
   }
 
-  function inlineMarkdown(value) {
+  function inlineMarkdown(value, shortcodeBlocks = []) {
     let output = escapeHtml(value);
+    output = output.replace(/HUGOSHORTCODETOKEN(\d+)END/g, (_match, index) => shortcodeToHtml(shortcodeBlocks[Number(index)]));
     output = output.replace(
       /\{\{(?:&lt;|%)\s*\/?[^{}]*?\s*(?:&gt;|%)\}\}/g,
-      (shortcode) => {
-        const label = shortcode
-          .replace(/&lt;|&gt;|%|\{\{|}}|\//g, "")
-          .trim()
-          .split(/\s+/)[0] || "shortcode";
-        return `<span class="hugo-shortcode" contenteditable="false" data-shortcode-markup="${shortcode}">Hugo shortcode: ${label}</span>`;
-      }
+      (shortcode) => shortcodeToHtml(decodeHtml(shortcode))
     );
     output = output.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^&]*?)&quot;)?\)(?:\{([^}]*)\})?/g,
@@ -85,7 +83,15 @@
   }
 
   function markdownToHtml(markdown) {
-    const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+    const shortcodeBlocks = [];
+    const protectedMarkdown = markdown.replace(
+      /\{\{[<%]\s*([^\s/>%]+)[^{}]*?[>%]\}\}[\s\S]*?\{\{[<%]\s*\/\1\s*[>%]\}\}/g,
+      (shortcode) => {
+        const index = shortcodeBlocks.push(shortcode) - 1;
+        return `HUGOSHORTCODETOKEN${index}END`;
+      }
+    );
+    const lines = protectedMarkdown.replace(/\r\n/g, "\n").split("\n");
     const html = [];
     let paragraph = [];
     let listType = "";
@@ -94,7 +100,7 @@
 
     const flushParagraph = () => {
       if (paragraph.length) {
-        html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+        html.push(`<p>${inlineMarkdown(paragraph.join(" "), shortcodeBlocks)}</p>`);
         paragraph = [];
       }
     };
@@ -138,7 +144,7 @@
         flushParagraph();
         closeList();
         const level = heading[1].length;
-        html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+        html.push(`<h${level}>${inlineMarkdown(heading[2], shortcodeBlocks)}</h${level}>`);
       } else if (unordered || ordered) {
         flushParagraph();
         const nextType = unordered ? "ul" : "ol";
@@ -147,11 +153,11 @@
           listType = nextType;
           html.push(`<${listType}>`);
         }
-        html.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+        html.push(`<li>${inlineMarkdown((unordered || ordered)[1], shortcodeBlocks)}</li>`);
       } else if (quote) {
         flushParagraph();
         closeList();
-        html.push(`<blockquote>${inlineMarkdown(quote[1])}</blockquote>`);
+        html.push(`<blockquote>${inlineMarkdown(quote[1], shortcodeBlocks)}</blockquote>`);
       } else if (rule) {
         flushParagraph();
         closeList();
@@ -209,6 +215,9 @@
     }
 
     const element = node;
+    if (element.classList.contains("hugo-shortcode")) {
+      return element.dataset.shortcodeMarkup || "";
+    }
     const content = Array.from(element.childNodes).map(inlineToMarkdown).join("");
     switch (element.tagName.toLowerCase()) {
       case "strong":
@@ -233,11 +242,6 @@
           ].filter(Boolean).join(" ");
           return `![${element.getAttribute("alt") || ""}](${element.dataset.markdownPath || element.getAttribute("src") || ""}${title ? ` "${title}"` : ""})${attributes ? `{${attributes}}` : ""}`;
         }
-      case "span":
-        if (element.classList.contains("hugo-shortcode")) {
-          return element.dataset.shortcodeMarkup || "";
-        }
-        return content;
       case "br":
         return "\n";
       default:
@@ -455,16 +459,75 @@
     imageAlt.focus();
   }
 
-  function buildShortcodeFields() {
+  function decodeHtml(value) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = value;
+    return textarea.value;
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replace(/`/g, "&#096;");
+  }
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function shortcodeToHtml(markup) {
+    const parsed = parseShortcodeMarkup(markup);
+    const rendered = parsed ? renderShortcode(parsed) : "";
+    const label = parsed?.name || "shortcode";
+    const generatedHtml = rendered || `Hugo shortcode: ${label}`;
+    return `<div class="hugo-shortcode" contenteditable="false" data-shortcode-markup="${escapeAttribute(markup)}" data-generated-html="${escapeAttribute(generatedHtml)}" title="Right-click to edit shortcode">${rendered || `Hugo shortcode: ${escapeHtml(label)}`}</div>`;
+  }
+
+  function parseShortcodeMarkup(markup) {
+    const trimmed = markup.trim();
+    const open = trimmed.match(/^\{\{[<%]\s*([^\s/>%]+)(.*?)\s*[>%]\}\}/s);
+    if (!open || open[1].startsWith("/")) return null;
+
+    const name = open[1];
+    const closePattern = new RegExp(`\\{\\{[<%]\\s*\\/${escapeRegExp(name)}\\s*[>%]\\}\\}\\s*$`, "s");
+    const close = trimmed.match(closePattern);
+    const inner = close ? trimmed.slice(open[0].length, trimmed.length - close[0].length).replace(/^\n|\n$/g, "") : "";
+    const named = {};
+    const positional = [];
+    const tokenPattern = /([\w-]+)=("([^"]*)"|'([^']*)'|([^\s]+))|"([^"]*)"|'([^']*)'|([^\s]+)/g;
+    let match;
+    while ((match = tokenPattern.exec(open[2] || ""))) {
+      if (match[1]) {
+        named[match[1]] = match[3] ?? match[4] ?? match[5] ?? "";
+      } else {
+        positional.push(match[6] ?? match[7] ?? match[8] ?? "");
+      }
+    }
+    return { name, named, positional, inner };
+  }
+
+  function renderShortcode(parsed) {
+    const shortcode = hugoShortcodes.find((item) => item.name === parsed.name);
+    if (!shortcode?.template) return "";
+
+    let rendered = shortcode.template;
+    rendered = rendered.replace(/\{\{[^{}]*?\.Get\s+["']([^"']+)["'][^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
+    rendered = rendered.replace(/\{\{[^{}]*?\.Params\.([A-Za-z][\w-]*)[^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
+    rendered = rendered.replace(/\{\{[^{}]*?index\s+\.Params\s+["']([^"']+)["'][^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
+    rendered = rendered.replace(/\{\{[^{}]*?\.Get\s+(\d+)[^{}]*?\}\}/g, (_match, index) => escapeHtml(parsed.positional[Number(index)] || ""));
+    rendered = rendered.replace(/\{\{[^{}]*?\.Inner[^{}]*?\}\}/g, escapeHtml(parsed.inner || ""));
+    rendered = rendered.replace(/\{\{[^{}]*?\}\}/g, "");
+    return rendered.trim();
+  }
+
+  function buildShortcodeFields(values) {
     const shortcode = hugoShortcodes.find((item) => item.name === shortcodeSelect.value);
     shortcodeFields.replaceChildren();
     if (!shortcode) return;
 
     for (const position of shortcode.positionalParams) {
-      shortcodeFields.appendChild(createShortcodeField(`Argument ${Number(position) + 1}`, `position-${position}`));
+      shortcodeFields.appendChild(createShortcodeField(`Argument ${Number(position) + 1}`, `position-${position}`, values?.positional?.[Number(position)] || ""));
     }
     for (const param of shortcode.params) {
-      shortcodeFields.appendChild(createShortcodeField(param, `param-${param}`));
+      shortcodeFields.appendChild(createShortcodeField(param, `param-${param}`, values?.named?.[param] || ""));
     }
     if (shortcode.hasInner) {
       const label = document.createElement("label");
@@ -472,6 +535,7 @@
       const textarea = document.createElement("textarea");
       textarea.dataset.shortcodeInner = "true";
       textarea.rows = 5;
+      textarea.value = values?.inner || "";
       label.appendChild(textarea);
       shortcodeFields.appendChild(label);
     }
@@ -483,13 +547,26 @@
     }
   }
 
-  function createShortcodeField(labelText, key) {
+  function createShortcodeField(labelText, key, value) {
     const label = document.createElement("label");
     label.textContent = labelText;
+    const wrapper = document.createElement("div");
+    wrapper.className = "field-with-button";
     const input = document.createElement("input");
     input.type = "text";
+    input.value = value;
     input.dataset.shortcodeField = key;
-    label.appendChild(input);
+    wrapper.appendChild(input);
+    if (labelText.toLowerCase() === "src") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Browse...";
+      button.addEventListener("click", () => {
+        vscode.postMessage({ type: "pickShortcodeFile", field: key });
+      });
+      wrapper.appendChild(button);
+    }
+    label.appendChild(wrapper);
     return label;
   }
 
@@ -519,6 +596,18 @@
     return shortcode.hasInner ? `${opening}\n${inner}\n{{< /${shortcode.name} >}}` : opening;
   }
 
+  function openShortcodeDialog(shortcodeElement) {
+    editingShortcode = shortcodeElement || null;
+    shortcodeDialogTitle.textContent = editingShortcode ? "Edit Hugo Shortcode" : "Insert Hugo Shortcode";
+    insertShortcodeButton.textContent = editingShortcode ? "Save Changes" : "Insert Shortcode";
+    const parsed = editingShortcode ? parseShortcodeMarkup(editingShortcode.dataset.shortcodeMarkup || "") : null;
+    if (parsed && hugoShortcodes.some((item) => item.name === parsed.name)) {
+      shortcodeSelect.value = parsed.name;
+    }
+    buildShortcodeFields(parsed);
+    shortcodeDialog.showModal();
+  }
+
   editMode.addEventListener("click", () => setMode("edit"));
   closeEditButton.addEventListener("click", requestCloseEditing);
   viewSourceMode.addEventListener("click", () => setMode("view-source"));
@@ -534,11 +623,16 @@
   visualEditor.addEventListener("contextmenu", (event) => {
     if (mode !== "edit") return;
     const image = event.target.closest?.("img[data-markdown-path]");
-    if (!image) return;
+    const shortcode = event.target.closest?.(".hugo-shortcode");
+    if (!image && !shortcode) return;
     event.preventDefault();
     savedRange = null;
     pendingImage = null;
-    openImageDialog(image);
+    if (image) {
+      openImageDialog(image);
+    } else {
+      openShortcodeDialog(shortcode);
+    }
   });
 
   toolbar.querySelectorAll("[data-command]").forEach((button) => {
@@ -592,23 +686,22 @@
     savedRange = selectionRangeInsideVisualEditor();
   });
   shortcodeButton.addEventListener("click", () => {
-    buildShortcodeFields();
-    shortcodeDialog.showModal();
+    openShortcodeDialog(null);
   });
-  shortcodeSelect.addEventListener("change", buildShortcodeFields);
+  shortcodeSelect.addEventListener("change", () => buildShortcodeFields());
   shortcodeDialog.addEventListener("submit", (event) => {
     event.preventDefault();
     const markup = buildShortcodeMarkup();
     if (!markup) return;
 
     visualEditor.focus();
-    const range = restoreSavedRange();
-    const placeholder = document.createElement("span");
-    placeholder.className = "hugo-shortcode";
-    placeholder.contentEditable = "false";
-    placeholder.dataset.shortcodeMarkup = markup;
-    placeholder.textContent = `Hugo shortcode: ${shortcodeSelect.value}`;
-    if (range) {
+    const range = editingShortcode ? null : restoreSavedRange();
+    const temporary = document.createElement("div");
+    temporary.innerHTML = shortcodeToHtml(markup);
+    const placeholder = temporary.firstElementChild;
+    if (editingShortcode) {
+      editingShortcode.replaceWith(placeholder);
+    } else if (range) {
       range.deleteContents();
       range.insertNode(placeholder);
       range.setStartAfter(placeholder);
@@ -617,6 +710,7 @@
       visualEditor.appendChild(placeholder);
     }
     savedRange = null;
+    editingShortcode = null;
     shortcodeDialog.close();
     scheduleEdit(htmlToMarkdown());
   });
@@ -636,6 +730,9 @@
     } else if (message.type === "imageSelected") {
       pendingImage = message;
       openImageDialog(null);
+    } else if (message.type === "shortcodeFileSelected") {
+      const input = shortcodeFields.querySelector(`[data-shortcode-field="${CSS.escape(message.field)}"]`);
+      if (input) input.value = message.path;
     } else if (message.type === "imagePreviews") {
       for (const preview of message.previews) {
         if (!preview.previewUri) continue;
@@ -696,6 +793,7 @@
     button.addEventListener("click", () => {
       pendingImage = null;
       editingImage = null;
+      editingShortcode = null;
       button.closest("dialog").close();
     });
   });

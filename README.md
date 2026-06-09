@@ -18,18 +18,20 @@ A VS Code extension by **Eric Haddan** for reading and editing Markdown files in
 ## Hugo Projects
 
 When a Markdown file is inside a trusted Hugo workspace, the editor automatically
-detects the nearest standard Hugo configuration file.
+detects the nearest standard Hugo configuration file solely to support shortcode
+discovery.
 
-- Loads plain CSS files from project and active-theme `static` and `assets` folders.
-- Resolves root-relative image paths such as `/images/photo.png` from Hugo's `static` folder.
-- Hides YAML or TOML front matter in visual modes while preserving it in the Markdown source.
 - Discovers shortcodes from project and active-theme `layouts/shortcodes` folders.
 - Adds an **Insert Shortcode** tool with detected properties for named, positional, and inner-content values.
-- Displays a Hugo project badge in the editor toolbar when detection succeeds.
+- Renders a best-effort visual preview for simple shortcode templates.
+- Shows the generated preview HTML when hovering over a rendered shortcode.
+- Right-clicks rendered shortcodes to reopen and edit their dynamic properties.
+- Adds a file browser for shortcode properties named `src`, inserting a path relative to the Markdown file.
 
-This built-in preview does not run Hugo, compile Sass, or execute templates and
-shortcodes. Shortcodes are inserted and preserved as visual placeholders, so
-complex theme rendering may differ from the generated site.
+This built-in preview does not run Hugo or compile Sass. Shortcode previews
+substitute common parameters into their templates without executing Go template
+logic, so complex shortcode rendering may differ from the generated site. The
+extension does not load project styles, project elements, or Hugo static assets.
 
 ## Usage
 

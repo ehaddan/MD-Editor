@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.7.0
+
+- Added generated HTML hover details for rendered shortcodes.
+- Limited Hugo project-root integration to shortcode discovery only.
+- Removed project/theme stylesheet loading, Hugo static image resolution, and the Hugo project badge.
+
+## 0.6.0
+
+- Added best-effort visual rendering of Hugo shortcode templates.
+- Added right-click editing for existing shortcode properties.
+- Added local file browsing for shortcode properties named `src`.
+
 ## 0.5.0
 
 - Added Hugo shortcode discovery from project and active-theme `layouts/shortcodes` folders.
