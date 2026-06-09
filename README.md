@@ -24,14 +24,16 @@ discovery.
 - Discovers shortcodes from project and active-theme `layouts/shortcodes` folders.
 - Adds an **Insert Shortcode** tool with detected properties for named, positional, and inner-content values.
 - Renders a best-effort visual preview for simple shortcode templates.
-- Shows the generated preview HTML when hovering over a rendered shortcode.
 - Right-clicks rendered shortcodes to reopen and edit their dynamic properties.
 - Adds a file browser for shortcode properties named `src`, inserting a path relative to the Markdown file.
+- Resolves shortcode-generated local images against the Markdown file, Hugo root, and Hugo `static` folder.
+- Displays an unresolved-image diagnostic when a shortcode image file cannot be found.
 
 This built-in preview does not run Hugo or compile Sass. Shortcode previews
 substitute common parameters into their templates without executing Go template
 logic, so complex shortcode rendering may differ from the generated site. The
-extension does not load project styles, project elements, or Hugo static assets.
+extension does not load project styles or project elements; it reads only
+shortcode definitions and local images referenced by rendered shortcodes.
 
 ## Usage
 

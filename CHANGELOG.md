@@ -1,5 +1,30 @@
 # Change Log
 
+## 0.7.5
+
+- Removed generated HTML display when hovering over rendered shortcodes.
+
+## 0.7.4
+
+- Added Hugo-root and Hugo-static fallback resolution for shortcode-generated local images.
+- Added visible unresolved-image diagnostics when a local image cannot be found.
+
+## 0.7.3
+
+- Added local image preview resolution for images generated inside rendered shortcodes.
+- Preserved original shortcode HTML and paths while replacing only the on-screen image source.
+
+## 0.7.2
+
+- Added shortcode variable assignment and default-value evaluation.
+- Added support for simple `if ne ... end` blocks in shortcode previews.
+- Protected generated shortcode HTML from Markdown inline formatting.
+
+## 0.7.1
+
+- Replaced shortcode HTML hover text with an interactive, scrollable hover panel.
+- Kept the generated HTML panel open while moving the pointer onto it.
+
 ## 0.7.0
 
 - Added generated HTML hover details for rendered shortcodes.

@@ -80,7 +80,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           await this.pickShortcodeFile(document, webviewPanel.webview, message.field);
           break;
         case "resolveImages":
-          await this.resolveImages(document, webviewPanel.webview, message.paths);
+          await this.resolveImages(document, webviewPanel.webview, message.paths, hugoContext);
           break;
       }
     });
@@ -158,7 +158,8 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   private async resolveImages(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    paths: string[]
+    paths: string[],
+    hugoContext?: HugoContext
   ): Promise<void> {
     const previews = await Promise.all(paths.map(async (markdownPath) => {
       if (/^(?:data:|https?:\/\/)/i.test(markdownPath)) {
@@ -167,14 +168,17 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
       try {
         const decodedPath = decodeURIComponent(markdownPath);
-        const imageUri = vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodedPath));
+        const imageUri = await findLocalImageUri(document.uri, decodedPath, hugoContext?.rootUri);
+        if (!imageUri) {
+          return { path: markdownPath, previewUri: "", error: `Image not found: ${markdownPath}` };
+        }
         const imageBytes = await vscode.workspace.fs.readFile(imageUri);
         return {
           path: markdownPath,
           previewUri: `data:${getImageMimeType(imageUri)};base64,${Buffer.from(imageBytes).toString("base64")}`
         };
       } catch {
-        return { path: markdownPath, previewUri: "" };
+        return { path: markdownPath, previewUri: "", error: `Unable to load image: ${markdownPath}` };
       }
     }));
 
@@ -371,6 +375,7 @@ function getImageMimeType(uri: vscode.Uri): string {
 }
 
 interface HugoContext {
+  rootUri: vscode.Uri;
   shortcodes: HugoShortcode[];
 }
 
@@ -411,6 +416,7 @@ async function findHugoContext(documentUri: vscode.Uri): Promise<HugoContext | u
       const theme = await readHugoTheme(configUri);
       const rootUri = vscode.Uri.file(directory);
       return {
+        rootUri,
         shortcodes: await findHugoShortcodes(rootUri, theme)
       };
     }
@@ -485,4 +491,32 @@ async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<
 function isPathWithin(candidate: string, parent: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function findLocalImageUri(
+  documentUri: vscode.Uri,
+  imagePath: string,
+  hugoRoot?: vscode.Uri
+): Promise<vscode.Uri | undefined> {
+  const relativeToDocument = path.resolve(path.dirname(documentUri.fsPath), imagePath);
+  const rootRelativePath = imagePath.replace(/^([/\\]|\.\.[/\\]|\.[/\\])+/, "");
+  const candidates = [
+    relativeToDocument,
+    ...(hugoRoot ? [
+      path.resolve(hugoRoot.fsPath, rootRelativePath),
+      path.resolve(hugoRoot.fsPath, "static", rootRelativePath)
+    ] : [])
+  ];
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const stat = await vscode.workspace.fs.stat(vscode.Uri.file(candidate));
+      if (stat.type === vscode.FileType.File) {
+        return vscode.Uri.file(candidate);
+      }
+    } catch {
+      // Try the next supported local-image location.
+    }
+  }
+  return undefined;
 }

@@ -56,10 +56,15 @@
 
   function inlineMarkdown(value, shortcodeBlocks = []) {
     let output = escapeHtml(value);
-    output = output.replace(/HUGOSHORTCODETOKEN(\d+)END/g, (_match, index) => shortcodeToHtml(shortcodeBlocks[Number(index)]));
+    const shortcodeHtml = [];
+    const protectShortcode = (markup) => {
+      const index = shortcodeHtml.push(shortcodeToHtml(markup)) - 1;
+      return `HUGORENDEREDTOKEN${index}END`;
+    };
+    output = output.replace(/HUGOSHORTCODETOKEN(\d+)END/g, (_match, index) => protectShortcode(shortcodeBlocks[Number(index)]));
     output = output.replace(
       /\{\{(?:&lt;|%)\s*\/?[^{}]*?\s*(?:&gt;|%)\}\}/g,
-      (shortcode) => shortcodeToHtml(decodeHtml(shortcode))
+      (shortcode) => protectShortcode(decodeHtml(shortcode))
     );
     output = output.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^&]*?)&quot;)?\)(?:\{([^}]*)\})?/g,
@@ -79,6 +84,7 @@
     output = output.replace(/~~([^~]+)~~/g, "<s>$1</s>");
     output = output.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
     output = output.replace(/(^|[^_])_([^_]+)_/g, "$1<em>$2</em>");
+    output = output.replace(/HUGORENDEREDTOKEN(\d+)END/g, (_match, index) => shortcodeHtml[Number(index)]);
     return output;
   }
 
@@ -198,9 +204,18 @@
   }
 
   function refreshImagePreviews() {
-    const paths = Array.from(visualEditor.querySelectorAll("img[data-markdown-path]"))
-      .map((image) => image.dataset.markdownPath)
-      .filter((imagePath) => Boolean(imagePath));
+    const paths = Array.from(visualEditor.querySelectorAll("img"))
+      .map((image) => {
+        const imagePath = image.dataset.markdownPath
+          || image.dataset.previewPath
+          || image.getAttribute("src");
+        if (!imagePath || /^(?:data:|https?:\/\/)/i.test(imagePath)) {
+          return "";
+        }
+        image.dataset.previewPath = imagePath;
+        return imagePath;
+      })
+      .filter(Boolean);
     if (paths.length) {
       vscode.postMessage({ type: "resolveImages", paths: [...new Set(paths)] });
     }
@@ -477,8 +492,7 @@
     const parsed = parseShortcodeMarkup(markup);
     const rendered = parsed ? renderShortcode(parsed) : "";
     const label = parsed?.name || "shortcode";
-    const generatedHtml = rendered || `Hugo shortcode: ${label}`;
-    return `<div class="hugo-shortcode" contenteditable="false" data-shortcode-markup="${escapeAttribute(markup)}" data-generated-html="${escapeAttribute(generatedHtml)}" title="Right-click to edit shortcode">${rendered || `Hugo shortcode: ${escapeHtml(label)}`}</div>`;
+    return `<div class="hugo-shortcode" contenteditable="false" data-shortcode-markup="${escapeAttribute(markup)}" title="Right-click to edit shortcode">${rendered || `Hugo shortcode: ${escapeHtml(label)}`}</div>`;
   }
 
   function parseShortcodeMarkup(markup) {
@@ -508,14 +522,58 @@
     const shortcode = hugoShortcodes.find((item) => item.name === parsed.name);
     if (!shortcode?.template) return "";
 
-    let rendered = shortcode.template;
-    rendered = rendered.replace(/\{\{[^{}]*?\.Get\s+["']([^"']+)["'][^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
-    rendered = rendered.replace(/\{\{[^{}]*?\.Params\.([A-Za-z][\w-]*)[^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
-    rendered = rendered.replace(/\{\{[^{}]*?index\s+\.Params\s+["']([^"']+)["'][^{}]*?\}\}/g, (_match, key) => escapeHtml(parsed.named[key] || ""));
-    rendered = rendered.replace(/\{\{[^{}]*?\.Get\s+(\d+)[^{}]*?\}\}/g, (_match, index) => escapeHtml(parsed.positional[Number(index)] || ""));
-    rendered = rendered.replace(/\{\{[^{}]*?\.Inner[^{}]*?\}\}/g, escapeHtml(parsed.inner || ""));
-    rendered = rendered.replace(/\{\{[^{}]*?\}\}/g, "");
+    const variables = {};
+    let rendered = shortcode.template.replace(/<!--[\s\S]*?-->/g, "");
+
+    rendered = rendered.replace(
+      /\{\{\s*\$([\w-]+)\s*:=\s*([\s\S]*?)\s*\}\}/g,
+      (_match, name, expression) => {
+        variables[name] = evaluateShortcodeExpression(expression, parsed, variables);
+        return "";
+      }
+    );
+    rendered = rendered.replace(
+      /\{\{\s*if\s+ne\s+([\s\S]*?)\s+("[^"]*"|'[^']*'|\S+)\s*\}\}([\s\S]*?)\{\{\s*end\s*\}\}/g,
+      (_match, leftExpression, rightExpression, content) => {
+        const left = evaluateShortcodeExpression(leftExpression, parsed, variables);
+        const right = evaluateShortcodeExpression(rightExpression, parsed, variables);
+        return left !== right ? content : "";
+      }
+    );
+    rendered = rendered.replace(/\{\{\s*([\s\S]*?)\s*\}\}/g, (_match, expression) =>
+      escapeHtml(evaluateShortcodeExpression(expression, parsed, variables))
+    );
     return rendered.trim();
+  }
+
+  function evaluateShortcodeExpression(expression, parsed, variables) {
+    const parts = expression.split("|").map((part) => part.trim()).filter(Boolean);
+    let value = evaluateShortcodeAtom(parts.shift() || "", parsed, variables);
+    for (const operation of parts) {
+      const defaultMatch = operation.match(/^default\s+(.+)$/s);
+      if (defaultMatch && !value) {
+        value = evaluateShortcodeAtom(defaultMatch[1], parsed, variables);
+      }
+    }
+    return String(value ?? "");
+  }
+
+  function evaluateShortcodeAtom(expression, parsed, variables) {
+    const atom = expression.trim();
+    const quoted = atom.match(/^(["'])([\s\S]*)\1$/);
+    if (quoted) return quoted[2];
+    if (atom.startsWith("$")) return variables[atom.slice(1)] || "";
+    if (atom === ".Inner") return parsed.inner || "";
+
+    const namedGet = atom.match(/^\.Get\s+["']([^"']+)["']$/);
+    if (namedGet) return parsed.named[namedGet[1]] || "";
+    const positionalGet = atom.match(/^\.Get\s+(\d+)$/);
+    if (positionalGet) return parsed.positional[Number(positionalGet[1])] || "";
+    const params = atom.match(/^\.Params\.([A-Za-z][\w-]*)$/);
+    if (params) return parsed.named[params[1]] || "";
+    const indexedParams = atom.match(/^index\s+\.Params\s+["']([^"']+)["']$/);
+    if (indexedParams) return parsed.named[indexedParams[1]] || "";
+    return atom;
   }
 
   function buildShortcodeFields(values) {
@@ -712,6 +770,7 @@
     savedRange = null;
     editingShortcode = null;
     shortcodeDialog.close();
+    refreshImagePreviews();
     scheduleEdit(htmlToMarkdown());
   });
 
@@ -735,10 +794,18 @@
       if (input) input.value = message.path;
     } else if (message.type === "imagePreviews") {
       for (const preview of message.previews) {
-        if (!preview.previewUri) continue;
-        for (const image of visualEditor.querySelectorAll("img[data-markdown-path]")) {
-          if (image.dataset.markdownPath === preview.path) {
-            image.src = preview.previewUri;
+        for (const image of visualEditor.querySelectorAll("img")) {
+          const imagePath = image.dataset.markdownPath || image.dataset.previewPath;
+          if (imagePath === preview.path) {
+            if (preview.previewUri) {
+              image.src = preview.previewUri;
+              image.classList.remove("unresolved-image");
+              image.removeAttribute("title");
+            } else {
+              image.classList.add("unresolved-image");
+              image.title = preview.error || `Image not found: ${preview.path}`;
+              image.alt = image.alt || preview.error || `Image not found: ${preview.path}`;
+            }
           }
         }
       }

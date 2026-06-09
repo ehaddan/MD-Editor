@@ -120,6 +120,15 @@ main {
   max-width: 100%;
 }
 
+.visual-editor img.unresolved-image {
+  display: block;
+  min-width: 240px;
+  min-height: 70px;
+  border: 1px dashed var(--vscode-errorForeground);
+  padding: 8px;
+  color: var(--vscode-errorForeground);
+}
+
 .visual-editor[contenteditable="true"] img {
   cursor: context-menu;
 }
@@ -148,29 +157,6 @@ main {
   border-radius: 4px;
   padding: 8px;
   cursor: context-menu;
-}
-
-.hugo-shortcode:hover::after {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(620px, calc(100vw - 80px));
-  max-height: 260px;
-  overflow: auto;
-  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-panel-border));
-  border-radius: 4px;
-  padding: 10px;
-  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
-  background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-  content: "Generated HTML\A\A" attr(data-generated-html);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-word;
-  pointer-events: none;
 }
 
 .hugo-shortcode:empty::before {
