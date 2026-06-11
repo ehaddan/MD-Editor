@@ -153,6 +153,9 @@ main {
   position: relative;
   display: block;
   margin: 8px 0;
+}
+
+.visual-editor[contenteditable="true"] .hugo-shortcode {
   border: 1px dashed var(--vscode-badge-background);
   border-radius: 4px;
   padding: 8px;
@@ -235,18 +238,135 @@ dialog textarea {
   margin-top: 4px;
 }
 
+.source-container {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 150px);
+}
+
+.source-highlight,
 .source-editor {
+  position: absolute;
+  inset: 0;
+  margin: 0;
   resize: none;
   border: 0;
-  color: var(--vscode-editor-foreground);
+  padding: 2px;
   background: transparent;
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
   line-height: 1.5;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.source-highlight {
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--vscode-editor-foreground);
+}
+
+.source-editor {
+  z-index: 1;
+  overflow: auto;
+  color: transparent;
+  caret-color: var(--vscode-editorCursor-foreground);
+  -webkit-text-fill-color: transparent;
+}
+
+.source-editor::selection {
+  background: var(--vscode-editor-selectionBackground);
+}
+
+.syntax-heading,
+.syntax-heading-marker {
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  font-weight: 700;
+}
+
+.syntax-bold {
+  color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+  font-weight: 700;
+}
+
+.syntax-italic,
+.syntax-strike {
+  color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+  font-style: italic;
+}
+
+.syntax-link,
+.syntax-image {
+  color: var(--vscode-textLink-foreground);
+}
+
+.syntax-code,
+.syntax-shortcode,
+.syntax-html {
+  color: var(--vscode-symbolIcon-functionForeground, #dcdcaa);
+}
+
+.syntax-frontmatter {
+  color: var(--vscode-symbolIcon-keyForeground, #c586c0);
+}
+
+.syntax-quote,
+.syntax-quote-marker {
+  color: var(--vscode-textBlockQuote-foreground);
+}
+
+.syntax-list-marker,
+.syntax-rule {
+  color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
 }
 
 .source-editor:read-only {
   cursor: default;
+}
+
+.shortcode-autocomplete {
+  position: absolute;
+  z-index: 5;
+  width: min(360px, calc(100% - 8px));
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  padding: 3px;
+  background: var(--vscode-editorSuggestWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.shortcode-suggestion {
+  display: grid;
+  width: 100%;
+  height: auto;
+  min-height: 36px;
+  gap: 2px;
+  border: 0;
+  padding: 5px 7px;
+  text-align: left;
+  color: var(--vscode-editorSuggestWidget-foreground, var(--vscode-editor-foreground));
+  background: transparent;
+}
+
+.shortcode-suggestion span {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcode-suggestion:hover,
+.shortcode-suggestion.selected {
+  color: var(--vscode-editorSuggestWidget-selectedForeground, var(--vscode-list-activeSelectionForeground));
+  background: var(--vscode-editorSuggestWidget-selectedBackground, var(--vscode-list-activeSelectionBackground));
+}
+
+.shortcode-suggestion.selected span {
+  color: inherit;
 }
 
 .hidden {

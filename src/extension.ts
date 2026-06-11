@@ -36,7 +36,8 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, "media"),
-        vscode.Uri.file(path.dirname(document.uri.fsPath))
+        vscode.Uri.file(path.dirname(document.uri.fsPath)),
+        ...(hugoContext ? [hugoContext.rootUri] : [])
       ]
     };
 
@@ -191,14 +192,21 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const nonce = getNonce();
     const documentBaseUri = webview.asWebviewUri(vscode.Uri.file(`${path.dirname(document.uri.fsPath)}${path.sep}`));
     const shortcodeData = JSON.stringify(hugoContext?.shortcodes ?? []).replace(/</g, "\\u003c");
+    const shortcodeThemeCss = hugoContext
+      ? hugoContext.themeStyles
+        .map((style) => scopeThemeCss(rewriteThemeCssUrls(style.css, style.uri, hugoContext.rootUri, webview)))
+        .join("\n")
+        .replace(/<\/style/gi, "<\\/style")
+      : "";
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; font-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
   <base href="${documentBaseUri}">
+  ${shortcodeThemeCss ? `<style nonce="${nonce}">${shortcodeThemeCss}</style>` : ""}
   <link rel="stylesheet" href="${styleUri}">
   <title>${escapeHtml(path.basename(document.uri.fsPath))}</title>
 </head>
@@ -241,7 +249,11 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   </header>
   <main>
     <article id="visualEditor" class="editor visual-editor content markdown-body post-content" contenteditable="false" spellcheck="true" aria-label="Markdown document"></article>
-    <textarea id="sourceEditor" class="editor source-editor hidden" spellcheck="false" aria-label="Plain text Markdown editor"></textarea>
+    <div id="sourceContainer" class="source-container hidden">
+      <pre id="sourceHighlight" class="editor source-highlight" aria-hidden="true"></pre>
+      <textarea id="sourceEditor" class="editor source-editor" spellcheck="false" aria-label="Plain text Markdown editor"></textarea>
+      <div id="shortcodeAutocomplete" class="shortcode-autocomplete hidden" role="listbox" aria-label="Shortcode suggestions"></div>
+    </div>
   </main>
   <dialog id="linkDialog">
     <form method="dialog">
@@ -377,6 +389,7 @@ function getImageMimeType(uri: vscode.Uri): string {
 interface HugoContext {
   rootUri: vscode.Uri;
   shortcodes: HugoShortcode[];
+  themeStyles: HugoThemeStyle[];
 }
 
 interface HugoShortcode {
@@ -385,6 +398,11 @@ interface HugoShortcode {
   positionalParams: string[];
   hasInner: boolean;
   template: string;
+}
+
+interface HugoThemeStyle {
+  uri: vscode.Uri;
+  css: string;
 }
 
 const HUGO_CONFIG_NAMES = [
@@ -417,7 +435,8 @@ async function findHugoContext(documentUri: vscode.Uri): Promise<HugoContext | u
       const rootUri = vscode.Uri.file(directory);
       return {
         rootUri,
-        shortcodes: await findHugoShortcodes(rootUri, theme)
+        shortcodes: await findHugoShortcodes(rootUri, theme),
+        themeStyles: await findHugoThemeStyles(rootUri)
       };
     }
 
@@ -486,6 +505,194 @@ async function findHugoShortcodes(rootUri: vscode.Uri, theme?: string): Promise<
     byName.set(definition.name, definition);
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function findHugoThemeStyles(rootUri: vscode.Uri): Promise<HugoThemeStyle[]> {
+  const files = await vscode.workspace.findFiles(
+    new vscode.RelativePattern(rootUri, "themes/**/*.css"),
+    "**/{node_modules,vendor}/**",
+    300
+  );
+  files.sort((left, right) => left.fsPath.localeCompare(right.fsPath));
+
+  const styles: HugoThemeStyle[] = [];
+  let totalBytes = 0;
+  const maximumFileBytes = 512 * 1024;
+  const maximumTotalBytes = 2 * 1024 * 1024;
+
+  for (const uri of files) {
+    try {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      if (bytes.byteLength > maximumFileBytes || totalBytes + bytes.byteLength > maximumTotalBytes) {
+        continue;
+      }
+      totalBytes += bytes.byteLength;
+      styles.push({ uri, css: Buffer.from(bytes).toString("utf8") });
+    } catch {
+      // Ignore unreadable theme stylesheets and continue with the remaining files.
+    }
+  }
+  return styles;
+}
+
+function rewriteThemeCssUrls(
+  css: string,
+  cssUri: vscode.Uri,
+  rootUri: vscode.Uri,
+  webview: vscode.Webview
+): string {
+  return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (match, quote: string, rawUrl: string) => {
+    const value = rawUrl.trim();
+    if (!value || /^(?:data:|https?:|#|var\()/i.test(value)) {
+      return match;
+    }
+
+    const withoutQuery = value.split(/[?#]/, 1)[0];
+    const suffix = value.slice(withoutQuery.length);
+    const assetUri = withoutQuery.startsWith("/")
+      ? vscode.Uri.file(path.join(rootUri.fsPath, "static", withoutQuery.replace(/^[/\\]+/, "")))
+      : vscode.Uri.file(path.resolve(path.dirname(cssUri.fsPath), withoutQuery));
+    return `url("${webview.asWebviewUri(assetUri)}${suffix}")`;
+  });
+}
+
+function scopeThemeCss(css: string): string {
+  const withoutImports = css
+    .replace(/@charset\s+["'][^"']+["']\s*;/gi, "")
+    .replace(/@import\s+(?:url\([^;]+\)|["'][^"']+["'])[^;]*;/gi, "");
+  return scopeCssRules(withoutImports);
+}
+
+function scopeCssRules(css: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < css.length) {
+    const openingBrace = findCssCharacter(css, cursor, "{");
+    if (openingBrace < 0) {
+      result += css.slice(cursor);
+      break;
+    }
+
+    const closingBrace = findMatchingCssBrace(css, openingBrace);
+    if (closingBrace < 0) {
+      result += css.slice(cursor);
+      break;
+    }
+
+    const prelude = css.slice(cursor, openingBrace);
+    const body = css.slice(openingBrace + 1, closingBrace);
+    const trimmedPrelude = prelude
+      .replace(/^(?:\s|\/\*[\s\S]*?\*\/)*/, "")
+      .trim();
+
+    if (trimmedPrelude.startsWith("@")) {
+      const name = trimmedPrelude.match(/^@([\w-]+)/)?.[1].toLowerCase();
+      const nestedRule = name === "media" || name === "supports" || name === "layer" ||
+        name === "container" || name === "document" || name === "scope";
+      result += `${prelude}{${nestedRule ? scopeCssRules(body) : body}}`;
+    } else {
+      result += `${scopeSelectorList(prelude)}{${body}}`;
+    }
+    cursor = closingBrace + 1;
+  }
+
+  return result;
+}
+
+function scopeSelectorList(selectorList: string): string {
+  const leadingTrivia = selectorList.match(/^(?:\s|\/\*[\s\S]*?\*\/)*/)?.[0] ?? "";
+  return leadingTrivia + splitCssSelectors(selectorList.slice(leadingTrivia.length))
+    .map((selector) => {
+      const trimmed = selector.trim();
+      if (!trimmed || trimmed.includes(".hugo-shortcode")) {
+        return selector;
+      }
+      const withoutPageRoot = trimmed.replace(/^(?:(?:html|body|:root)\s*)+/i, "");
+      return `.hugo-shortcode${withoutPageRoot ? ` ${withoutPageRoot}` : ""}`;
+    })
+    .join(", ");
+}
+
+function splitCssSelectors(selectorList: string): string[] {
+  const selectors: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+
+  for (let index = 0; index < selectorList.length; index += 1) {
+    const character = selectorList[index];
+    if (quote) {
+      if (character === "\\" && index + 1 < selectorList.length) {
+        index += 1;
+      } else if (character === quote) {
+        quote = "";
+      }
+    } else if (character === "'" || character === "\"") {
+      quote = character;
+    } else if (character === "(" || character === "[") {
+      depth += 1;
+    } else if (character === ")" || character === "]") {
+      depth = Math.max(0, depth - 1);
+    } else if (character === "," && depth === 0) {
+      selectors.push(selectorList.slice(start, index));
+      start = index + 1;
+    }
+  }
+  selectors.push(selectorList.slice(start));
+  return selectors;
+}
+
+function findCssCharacter(css: string, start: number, target: string): number {
+  let quote = "";
+  let inComment = false;
+  for (let index = start; index < css.length; index += 1) {
+    const character = css[index];
+    const next = css[index + 1];
+    if (inComment) {
+      if (character === "*" && next === "/") {
+        inComment = false;
+        index += 1;
+      }
+    } else if (quote) {
+      if (character === "\\" && index + 1 < css.length) {
+        index += 1;
+      } else if (character === quote) {
+        quote = "";
+      }
+    } else if (character === "/" && next === "*") {
+      inComment = true;
+      index += 1;
+    } else if (character === "'" || character === "\"") {
+      quote = character;
+    } else if (character === target) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function findMatchingCssBrace(css: string, openingBrace: number): number {
+  let depth = 1;
+  let cursor = openingBrace + 1;
+  while (cursor < css.length) {
+    const nextOpening = findCssCharacter(css, cursor, "{");
+    const nextClosing = findCssCharacter(css, cursor, "}");
+    if (nextClosing < 0) {
+      return -1;
+    }
+    if (nextOpening >= 0 && nextOpening < nextClosing) {
+      depth += 1;
+      cursor = nextOpening + 1;
+    } else {
+      depth -= 1;
+      if (depth === 0) {
+        return nextClosing;
+      }
+      cursor = nextClosing + 1;
+    }
+  }
+  return -1;
 }
 
 function isPathWithin(candidate: string, parent: string): boolean {

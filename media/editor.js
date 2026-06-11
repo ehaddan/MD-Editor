@@ -1,7 +1,10 @@
 (function () {
   const vscode = acquireVsCodeApi();
   const visualEditor = document.getElementById("visualEditor");
+  const sourceContainer = document.getElementById("sourceContainer");
+  const sourceHighlight = document.getElementById("sourceHighlight");
   const sourceEditor = document.getElementById("sourceEditor");
+  const shortcodeAutocomplete = document.getElementById("shortcodeAutocomplete");
   const editMode = document.getElementById("editMode");
   const closeEditButton = document.getElementById("closeEditButton");
   const viewSourceMode = document.getElementById("viewSourceMode");
@@ -33,6 +36,22 @@
   const insertShortcodeButton = document.getElementById("insertShortcodeButton");
   const status = document.getElementById("status");
   const hugoShortcodes = Array.isArray(window.hugoShortcodes) ? window.hugoShortcodes : [];
+  const standardShortcodes = [
+    { name: "figure", params: ["src", "link", "target", "rel", "alt", "title", "caption", "class", "height", "width", "loading"], positionalParams: [], hasInner: false, standard: true },
+    { name: "gist", params: [], positionalParams: ["0", "1"], hasInner: false, standard: true },
+    { name: "highlight", params: [], positionalParams: ["0", "1"], hasInner: true, standard: true },
+    { name: "instagram", params: ["hidecaption"], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "param", params: [], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "ref", params: ["path", "lang", "outputFormat"], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "relref", params: ["path", "lang", "outputFormat"], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "vimeo", params: ["class", "title"], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "x", params: [], positionalParams: ["0"], hasInner: false, standard: true },
+    { name: "youtube", params: ["id", "title"], positionalParams: ["0"], hasInner: false, standard: true }
+  ];
+  const shortcodeCompletions = [...new Map(
+    [...standardShortcodes, ...hugoShortcodes.map((shortcode) => ({ ...shortcode, standard: false }))]
+      .map((shortcode) => [shortcode.name, shortcode])
+  ).values()].sort((left, right) => left.name.localeCompare(right.name));
 
   let mode = "view";
   let currentMarkdown = "";
@@ -44,6 +63,7 @@
   let editingImage;
   let editingShortcode;
   let frontMatter = "";
+  let shortcodeCompletionState;
 
   function escapeHtml(value) {
     return value
@@ -52,6 +72,178 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function highlightInlineMarkdown(value) {
+    const pattern = /(\{\{[<%][\s\S]*?[>%]\}\}|<\/?[A-Za-z][^>\n]*>|!\[[^\]]*\]\([^)]*\)|\[[^\]]+\]\([^)]*\)|`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\*[^*\n]+\*|_[^_\n]+_)/g;
+    let html = "";
+    let cursor = 0;
+    for (const match of value.matchAll(pattern)) {
+      html += escapeHtml(value.slice(cursor, match.index));
+      const token = match[0];
+      const className = token.startsWith("{{")
+        ? "syntax-shortcode"
+        : token.startsWith("<")
+          ? "syntax-html"
+        : token.startsWith("![")
+          ? "syntax-image"
+          : token.startsWith("[")
+            ? "syntax-link"
+            : token.startsWith("`")
+              ? "syntax-code"
+              : token.startsWith("~~")
+                ? "syntax-strike"
+                : token.startsWith("**") || token.startsWith("__")
+                  ? "syntax-bold"
+                  : "syntax-italic";
+      html += `<span class="${className}">${escapeHtml(token)}</span>`;
+      cursor = match.index + token.length;
+    }
+    return html + escapeHtml(value.slice(cursor));
+  }
+
+  function highlightMarkdown(markdown) {
+    const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+    let inFence = false;
+    let frontMatterDelimiter = lines[0] === "---" || lines[0] === "+++" ? lines[0] : "";
+    return lines.map((line, index) => {
+      if (frontMatterDelimiter) {
+        const html = `<span class="syntax-frontmatter">${escapeHtml(line)}</span>`;
+        if (index > 0 && line === frontMatterDelimiter) frontMatterDelimiter = "";
+        return html;
+      }
+      if (/^\s*(?:```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return `<span class="syntax-code">${escapeHtml(line)}</span>`;
+      }
+      if (inFence) return `<span class="syntax-code">${escapeHtml(line)}</span>`;
+
+      const heading = line.match(/^(\s*)(#{1,6})(\s+.*)$/);
+      if (heading) {
+        return `${escapeHtml(heading[1])}<span class="syntax-heading-marker">${escapeHtml(heading[2])}</span><span class="syntax-heading">${highlightInlineMarkdown(heading[3])}</span>`;
+      }
+      const quote = line.match(/^(\s*)(>+)(\s?.*)$/);
+      if (quote) {
+        return `${escapeHtml(quote[1])}<span class="syntax-quote-marker">${escapeHtml(quote[2])}</span><span class="syntax-quote">${highlightInlineMarkdown(quote[3])}</span>`;
+      }
+      const list = line.match(/^(\s*)([-+*]|\d+\.)(\s+.*)$/);
+      if (list) {
+        return `${escapeHtml(list[1])}<span class="syntax-list-marker">${escapeHtml(list[2])}</span>${highlightInlineMarkdown(list[3])}`;
+      }
+      if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+        return `<span class="syntax-rule">${escapeHtml(line)}</span>`;
+      }
+      return highlightInlineMarkdown(line);
+    }).join("\n");
+  }
+
+  function refreshSourceHighlight() {
+    sourceHighlight.innerHTML = `${highlightMarkdown(sourceEditor.value)}\n`;
+    sourceHighlight.scrollTop = sourceEditor.scrollTop;
+    sourceHighlight.scrollLeft = sourceEditor.scrollLeft;
+  }
+
+  function shortcodeCompletionContext() {
+    if (mode !== "source" || sourceEditor.selectionStart !== sourceEditor.selectionEnd) return null;
+    const beforeCaret = sourceEditor.value.slice(0, sourceEditor.selectionStart);
+    const match = beforeCaret.match(/\{\{([<%])\s*(\/?)([A-Za-z0-9_./-]*)$/);
+    if (!match) return null;
+    return {
+      delimiter: match[1],
+      closing: match[2] === "/",
+      query: match[3].toLowerCase(),
+      start: sourceEditor.selectionStart - match[0].length,
+      end: sourceEditor.selectionStart
+    };
+  }
+
+  function hideShortcodeAutocomplete() {
+    shortcodeAutocomplete.classList.add("hidden");
+    shortcodeAutocomplete.replaceChildren();
+    shortcodeCompletionState = null;
+  }
+
+  function positionShortcodeAutocomplete() {
+    const style = getComputedStyle(sourceEditor);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const beforeCaret = sourceEditor.value.slice(0, sourceEditor.selectionStart);
+    const lines = beforeCaret.split("\n");
+    const row = lines.length - 1;
+    const column = lines.at(-1).length;
+    const characterWidth = measureSourceCharacterWidth(style);
+    const left = Math.max(4, Math.min(sourceContainer.clientWidth - 270, 2 + column * characterWidth - sourceEditor.scrollLeft));
+    const top = Math.max(4, Math.min(sourceContainer.clientHeight - 190, 2 + (row + 1) * lineHeight - sourceEditor.scrollTop));
+    shortcodeAutocomplete.style.left = `${left}px`;
+    shortcodeAutocomplete.style.top = `${top}px`;
+  }
+
+  function measureSourceCharacterWidth(style) {
+    const probe = document.createElement("span");
+    probe.textContent = "MMMMMMMMMM";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.fontFamily = style.fontFamily;
+    probe.style.fontSize = style.fontSize;
+    sourceContainer.appendChild(probe);
+    const width = probe.getBoundingClientRect().width / 10;
+    probe.remove();
+    return width || 8;
+  }
+
+  function renderShortcodeAutocomplete(selectedIndex = 0) {
+    const context = shortcodeCompletionContext();
+    if (!context) {
+      hideShortcodeAutocomplete();
+      return;
+    }
+    const matches = shortcodeCompletions
+      .filter((shortcode) => shortcode.name.toLowerCase().includes(context.query))
+      .slice(0, 12);
+    if (!matches.length) {
+      hideShortcodeAutocomplete();
+      return;
+    }
+
+    shortcodeCompletionState = {
+      context,
+      matches,
+      selectedIndex: Math.max(0, Math.min(selectedIndex, matches.length - 1))
+    };
+    shortcodeAutocomplete.replaceChildren(...matches.map((shortcode, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `shortcode-suggestion${index === shortcodeCompletionState.selectedIndex ? " selected" : ""}`;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", index === shortcodeCompletionState.selectedIndex ? "true" : "false");
+      option.innerHTML = `<strong>${shortcodeCompletionState.context.closing ? "/" : ""}${escapeHtml(shortcode.name)}</strong><span>${shortcode.standard ? "Hugo" : "Project"} shortcode${shortcode.params.length ? ` · ${escapeHtml(shortcode.params.join(", "))}` : ""}</span>`;
+      option.addEventListener("mousedown", (event) => event.preventDefault());
+      option.addEventListener("click", () => acceptShortcodeCompletion(index));
+      return option;
+    }));
+    shortcodeAutocomplete.classList.remove("hidden");
+    positionShortcodeAutocomplete();
+    shortcodeAutocomplete.children[shortcodeCompletionState.selectedIndex]?.scrollIntoView({ block: "nearest" });
+  }
+
+  function acceptShortcodeCompletion(index = shortcodeCompletionState?.selectedIndex || 0) {
+    if (!shortcodeCompletionState) return;
+    const shortcode = shortcodeCompletionState.matches[index];
+    const { delimiter, closing, start, end } = shortcodeCompletionState.context;
+    const closingDelimiter = delimiter === "<" ? ">" : "%";
+    const opening = `{{${delimiter} ${closing ? "/" : ""}${shortcode.name} ${closingDelimiter}}}`;
+    const replacement = shortcode.hasInner && !closing
+      ? `${opening}\n\n{{${delimiter} /${shortcode.name} ${closingDelimiter}}}`
+      : opening;
+    const caretOffset = shortcode.hasInner && !closing
+      ? opening.length + 1
+      : closing ? opening.length : opening.length - 4;
+    sourceEditor.setRangeText(replacement, start, end, "end");
+    const caret = start + caretOffset;
+    sourceEditor.setSelectionRange(caret, caret);
+    hideShortcodeAutocomplete();
+    refreshSourceHighlight();
+    scheduleEdit(sourceEditor.value);
+    sourceEditor.focus();
   }
 
   function inlineMarkdown(value, shortcodeBlocks = []) {
@@ -322,6 +514,7 @@
         currentMarkdown = savedMarkdown;
       }
       sourceEditor.value = currentMarkdown;
+      refreshSourceHighlight();
     } else {
       if (mode === "source") {
         currentMarkdown = sourceEditor.value;
@@ -337,7 +530,8 @@
     const isViewSource = mode === "view-source";
 
     visualEditor.classList.toggle("hidden", isSource);
-    sourceEditor.classList.toggle("hidden", !isSource);
+    sourceContainer.classList.toggle("hidden", !isSource);
+    if (!isSource || isViewSource) hideShortcodeAutocomplete();
     sourceEditor.readOnly = isViewSource;
     visualEditor.contentEditable = isEdit ? "true" : "false";
     toolbar.classList.toggle("hidden", !isEdit);
@@ -364,6 +558,7 @@
     currentMarkdown = markdown;
     draftDirty = false;
     sourceEditor.value = markdown;
+    refreshSourceHighlight();
     mode = "source";
     setMode("view");
   }
@@ -673,7 +868,41 @@
   sourceMode.addEventListener("click", () => setMode("source"));
   visualEditMode.addEventListener("click", () => setMode("edit"));
   sourceEditor.addEventListener("input", () => {
-    if (mode === "source") scheduleEdit(sourceEditor.value);
+    refreshSourceHighlight();
+    if (mode === "source") {
+      scheduleEdit(sourceEditor.value);
+      renderShortcodeAutocomplete();
+    }
+  });
+  sourceEditor.addEventListener("scroll", () => {
+    refreshSourceHighlight();
+    if (shortcodeCompletionState) positionShortcodeAutocomplete();
+  });
+  sourceEditor.addEventListener("click", () => {
+    if (mode === "source") renderShortcodeAutocomplete();
+  });
+  sourceEditor.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && event.code === "Space" && mode === "source") {
+      event.preventDefault();
+      renderShortcodeAutocomplete();
+      return;
+    }
+    if (!shortcodeCompletionState) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const next = (shortcodeCompletionState.selectedIndex + direction + shortcodeCompletionState.matches.length) % shortcodeCompletionState.matches.length;
+      renderShortcodeAutocomplete(next);
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      acceptShortcodeCompletion();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      hideShortcodeAutocomplete();
+    }
+  });
+  sourceEditor.addEventListener("blur", () => {
+    setTimeout(hideShortcodeAutocomplete, 100);
   });
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
@@ -783,6 +1012,7 @@
         currentMarkdown = savedMarkdown;
         draftDirty = false;
         sourceEditor.value = currentMarkdown;
+        refreshSourceHighlight();
         if (mode === "view") renderVisual(currentMarkdown);
       }
       applyingExternalChange = false;
