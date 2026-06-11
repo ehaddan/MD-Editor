@@ -13,6 +13,7 @@
   const visualEditMode = document.getElementById("visualEditMode");
   const toolbar = document.getElementById("toolbar");
   const blockStyle = document.getElementById("blockStyle");
+  const tableButton = document.getElementById("tableButton");
   const linkButton = document.getElementById("linkButton");
   const imageButton = document.getElementById("imageButton");
   const shortcodeButton = document.getElementById("shortcodeButton");
@@ -34,8 +35,17 @@
   const shortcodeSelect = document.getElementById("shortcodeSelect");
   const shortcodeFields = document.getElementById("shortcodeFields");
   const insertShortcodeButton = document.getElementById("insertShortcodeButton");
+  const shortcodeInspector = document.getElementById("shortcodeInspector");
+  const shortcodeInspectorTitle = document.getElementById("shortcodeInspectorTitle");
+  const shortcodeInspectorHtml = document.getElementById("shortcodeInspectorHtml");
+  const shortcodeInspectorCssTitle = document.getElementById("shortcodeInspectorCssTitle");
+  const shortcodeInspectorCss = document.getElementById("shortcodeInspectorCss");
+  const shortcodeInspectorRules = document.getElementById("shortcodeInspectorRules");
+  const closeShortcodeInspector = document.getElementById("closeShortcodeInspector");
   const status = document.getElementById("status");
   const hugoShortcodes = Array.isArray(window.hugoShortcodes) ? window.hugoShortcodes : [];
+  const hugoThemeStyles = Array.isArray(window.hugoThemeStyles) ? window.hugoThemeStyles : [];
+  let shortcodeInspectorEnabled = window.shortcodeInspectorEnabled === true;
   const standardShortcodes = [
     { name: "figure", params: ["src", "link", "target", "rel", "alt", "title", "caption", "class", "height", "width", "loading"], positionalParams: [], hasInner: false, standard: true },
     { name: "gist", params: [], positionalParams: ["0", "1"], hasInner: false, standard: true },
@@ -64,6 +74,9 @@
   let editingShortcode;
   let frontMatter = "";
   let shortcodeCompletionState;
+  let shortcodeInspectorShowTimer;
+  let shortcodeInspectorHideTimer;
+  let inspectedShortcode;
 
   function escapeHtml(value) {
     return value
@@ -143,16 +156,136 @@
     sourceHighlight.scrollLeft = sourceEditor.scrollLeft;
   }
 
+  function elementDebugLabel(element) {
+    const id = element.id ? `#${element.id}` : "";
+    const classes = Array.from(element.classList)
+      .filter((className) => className !== "hugo-shortcode")
+      .map((className) => `.${className}`)
+      .join("");
+    return `${element.tagName.toLowerCase()}${id}${classes}`;
+  }
+
+  function formatGeneratedHtml(element) {
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll("[data-preview-path], .unresolved-image").forEach((child) => {
+      child.removeAttribute("data-preview-path");
+      child.classList.remove("unresolved-image");
+    });
+    clone.querySelectorAll("img[data-markdown-path]").forEach((image) => {
+      image.setAttribute("src", image.dataset.markdownPath);
+      image.removeAttribute("data-markdown-path");
+    });
+    const container = document.createElement("div");
+    container.append(...clone.childNodes);
+    return container.innerHTML
+      .replace(/></g, ">\n<")
+      .replace(/^\s+|\s+$/g, "");
+  }
+
+  function computedCssText(element) {
+    const computed = getComputedStyle(element);
+    return Array.from(computed)
+      .sort()
+      .map((property) => `${property}: ${computed.getPropertyValue(property).trim()};`)
+      .join("\n");
+  }
+
+  function matchingThemeRules(element) {
+    const matches = [];
+    for (const style of hugoThemeStyles) {
+      const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+      let match;
+      while ((match = rulePattern.exec(style.css))) {
+        const selectors = match[1].trim();
+        if (!selectors || selectors.startsWith("@")) continue;
+        const matchingSelectors = selectors.split(",").map((selector) => selector.trim()).filter((selector) => {
+          try {
+            return selector && element.matches(selector);
+          } catch {
+            return false;
+          }
+        });
+        if (matchingSelectors.length) {
+          matches.push(`${style.name}\n${matchingSelectors.join(", ")} {\n${match[2].trim()}\n}`);
+        }
+      }
+    }
+    if (matches.length) return matches.join("\n\n");
+    const loadedFiles = hugoThemeStyles.map((style) => `- ${style.name}`).join("\n");
+    return `No matching rules found in loaded theme CSS files.\n\nLoaded theme CSS files:\n${loadedFiles || "- None"}`;
+  }
+
+  function positionShortcodeInspector(shortcode) {
+    const rectangle = shortcode.getBoundingClientRect();
+    const width = Math.min(560, window.innerWidth - 24);
+    const fitsRight = rectangle.right + 12 + width <= window.innerWidth;
+    const left = fitsRight
+      ? rectangle.right + 12
+      : Math.max(12, rectangle.left - width - 12);
+    shortcodeInspector.style.width = `${width}px`;
+    shortcodeInspector.style.left = `${left}px`;
+    shortcodeInspector.style.top = `${Math.max(12, Math.min(window.innerHeight - 420, rectangle.top))}px`;
+  }
+
+  function showShortcodeInspector(shortcode, target) {
+    if (!shortcodeInspectorEnabled) return;
+    clearTimeout(shortcodeInspectorHideTimer);
+    inspectedShortcode = shortcode;
+    const parsed = parseShortcodeMarkup(shortcode.dataset.shortcodeMarkup || "");
+    const inspectedElement = target instanceof Element && shortcode.contains(target) ? target : shortcode;
+    shortcodeInspectorTitle.textContent = `${parsed?.name || "Shortcode"} Inspector`;
+    shortcodeInspectorHtml.textContent = formatGeneratedHtml(shortcode);
+    shortcodeInspectorCssTitle.textContent = `Computed CSS: ${elementDebugLabel(inspectedElement)}`;
+    shortcodeInspectorCss.textContent = computedCssText(inspectedElement);
+    shortcodeInspectorRules.textContent = matchingThemeRules(inspectedElement);
+    positionShortcodeInspector(shortcode);
+    shortcodeInspector.classList.remove("hidden");
+  }
+
+  function scheduleShortcodeInspector(shortcode, target) {
+    if (!shortcodeInspectorEnabled) return;
+    clearTimeout(shortcodeInspectorShowTimer);
+    clearTimeout(shortcodeInspectorHideTimer);
+    shortcodeInspectorShowTimer = setTimeout(() => showShortcodeInspector(shortcode, target), 350);
+  }
+
+  function scheduleHideShortcodeInspector() {
+    clearTimeout(shortcodeInspectorShowTimer);
+    clearTimeout(shortcodeInspectorHideTimer);
+    shortcodeInspectorHideTimer = setTimeout(() => {
+      shortcodeInspector.classList.add("hidden");
+      inspectedShortcode = null;
+    }, 300);
+  }
+
   function shortcodeCompletionContext() {
     if (mode !== "source" || sourceEditor.selectionStart !== sourceEditor.selectionEnd) return null;
     const beforeCaret = sourceEditor.value.slice(0, sourceEditor.selectionStart);
-    const match = beforeCaret.match(/\{\{([<%])\s*(\/?)([A-Za-z0-9_./-]*)$/);
-    if (!match) return null;
+    const nameMatch = beforeCaret.match(/\{\{([<%])\s*(\/?)([A-Za-z0-9_./-]*)$/);
+    if (nameMatch) {
+      return {
+        type: "shortcode",
+        delimiter: nameMatch[1],
+        closing: nameMatch[2] === "/",
+        query: nameMatch[3].toLowerCase(),
+        start: sourceEditor.selectionStart - nameMatch[0].length,
+        end: sourceEditor.selectionStart
+      };
+    }
+
+    const propertyMatch = beforeCaret.match(/\{\{([<%])\s*([A-Za-z0-9_./-]+)\s+([^{}]*?)$/);
+    if (!propertyMatch || /[>%]\}\}/.test(propertyMatch[3])) return null;
+    const shortcode = shortcodeCompletions.find((item) => item.name === propertyMatch[2]);
+    if (!shortcode?.params?.length) return null;
+    const queryMatch = propertyMatch[3].match(/(?:^|\s)([\w-]*)$/);
+    if (!queryMatch) return null;
+    const usedProperties = new Set([...propertyMatch[3].matchAll(/(?:^|\s)([\w-]+)\s*=/g)].map((match) => match[1]));
     return {
-      delimiter: match[1],
-      closing: match[2] === "/",
-      query: match[3].toLowerCase(),
-      start: sourceEditor.selectionStart - match[0].length,
+      type: "property",
+      shortcode,
+      query: queryMatch[1].toLowerCase(),
+      usedProperties,
+      start: sourceEditor.selectionStart - queryMatch[1].length,
       end: sourceEditor.selectionStart
     };
   }
@@ -196,9 +329,21 @@
       hideShortcodeAutocomplete();
       return;
     }
-    const matches = shortcodeCompletions
-      .filter((shortcode) => shortcode.name.toLowerCase().includes(context.query))
-      .slice(0, 12);
+    const matches = context.type === "property"
+      ? context.shortcode.params
+        .filter((property) => !context.usedProperties.has(property) && property.toLowerCase().includes(context.query))
+        .map((property) => ({
+          name: property,
+          property: true,
+          shortcodeName: context.shortcode.name,
+          params: [],
+          standard: false,
+          hasInner: false
+        }))
+        .slice(0, 12)
+      : shortcodeCompletions
+        .filter((shortcode) => shortcode.name.toLowerCase().includes(context.query))
+        .slice(0, 12);
     if (!matches.length) {
       hideShortcodeAutocomplete();
       return;
@@ -216,6 +361,9 @@
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", index === shortcodeCompletionState.selectedIndex ? "true" : "false");
       option.innerHTML = `<strong>${shortcodeCompletionState.context.closing ? "/" : ""}${escapeHtml(shortcode.name)}</strong><span>${shortcode.standard ? "Hugo" : "Project"} shortcode${shortcode.params.length ? ` · ${escapeHtml(shortcode.params.join(", "))}` : ""}</span>`;
+      if (shortcode.property) {
+        option.innerHTML = `<strong>${escapeHtml(shortcode.name)}</strong><span>${escapeHtml(shortcode.shortcodeName)} property</span>`;
+      }
       option.addEventListener("mousedown", (event) => event.preventDefault());
       option.addEventListener("click", () => acceptShortcodeCompletion(index));
       return option;
@@ -228,7 +376,19 @@
   function acceptShortcodeCompletion(index = shortcodeCompletionState?.selectedIndex || 0) {
     if (!shortcodeCompletionState) return;
     const shortcode = shortcodeCompletionState.matches[index];
-    const { delimiter, closing, start, end } = shortcodeCompletionState.context;
+    const { start, end } = shortcodeCompletionState.context;
+    if (shortcodeCompletionState.context.type === "property") {
+      const replacement = `${shortcode.name}=""`;
+      sourceEditor.setRangeText(replacement, start, end, "end");
+      const caret = start + shortcode.name.length + 2;
+      sourceEditor.setSelectionRange(caret, caret);
+      hideShortcodeAutocomplete();
+      refreshSourceHighlight();
+      scheduleEdit(sourceEditor.value);
+      sourceEditor.focus();
+      return;
+    }
+    const { delimiter, closing } = shortcodeCompletionState.context;
     const closingDelimiter = delimiter === "<" ? ">" : "%";
     const opening = `{{${delimiter} ${closing ? "/" : ""}${shortcode.name} ${closingDelimiter}}}`;
     const replacement = shortcode.hasInner && !closing
@@ -280,6 +440,62 @@
     return output;
   }
 
+  function splitMarkdownTableRow(line) {
+    const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    const cells = [];
+    let cell = "";
+    let escaped = false;
+    let inCode = false;
+
+    for (const character of trimmed) {
+      if (escaped) {
+        cell += character === "|" ? "|" : `\\${character}`;
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "`") {
+        inCode = !inCode;
+        cell += character;
+      } else if (character === "|" && !inCode) {
+        cells.push(cell.trim());
+        cell = "";
+      } else {
+        cell += character;
+      }
+    }
+    if (escaped) cell += "\\";
+    cells.push(cell.trim());
+    return cells;
+  }
+
+  function parseTableDelimiter(line) {
+    const cells = splitMarkdownTableRow(line);
+    if (!cells.length || cells.some((cell) => !/^:?-{3,}:?$/.test(cell))) return null;
+    return cells.map((cell) => cell.startsWith(":") && cell.endsWith(":")
+      ? "center"
+      : cell.endsWith(":")
+        ? "right"
+        : cell.startsWith(":")
+          ? "left"
+          : "");
+  }
+
+  function tableToHtml(headerLine, delimiterLine, bodyLines, shortcodeBlocks) {
+    const headers = splitMarkdownTableRow(headerLine);
+    const alignments = parseTableDelimiter(delimiterLine) || [];
+    const columnCount = Math.max(headers.length, alignments.length);
+    const cellHtml = (cell, index, tag) => {
+      const alignment = alignments[index] || "";
+      return `<${tag}${alignment ? ` data-align="${alignment}" style="text-align:${alignment}"` : ""}>${inlineMarkdown(cell || "", shortcodeBlocks)}</${tag}>`;
+    };
+    const header = Array.from({ length: columnCount }, (_value, index) => cellHtml(headers[index], index, "th")).join("");
+    const body = bodyLines.map((line) => {
+      const cells = splitMarkdownTableRow(line);
+      return `<tr>${Array.from({ length: columnCount }, (_value, index) => cellHtml(cells[index], index, "td")).join("")}</tr>`;
+    }).join("");
+    return `<table><thead><tr>${header}</tr></thead>${body ? `<tbody>${body}</tbody>` : ""}</table>`;
+  }
+
   function markdownToHtml(markdown) {
     const shortcodeBlocks = [];
     const protectedMarkdown = markdown.replace(
@@ -309,7 +525,8 @@
       }
     };
 
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       if (line.startsWith("```")) {
         flushParagraph();
         closeList();
@@ -337,8 +554,22 @@
       const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
       const quote = line.match(/^>\s?(.*)$/);
       const rule = line.match(/^\s*(---+|\*\*\*+|___+)\s*$/);
+      const tableAlignments = line.includes("|") && lineIndex + 1 < lines.length
+        ? parseTableDelimiter(lines[lineIndex + 1])
+        : null;
 
-      if (heading) {
+      if (tableAlignments) {
+        flushParagraph();
+        closeList();
+        const bodyLines = [];
+        lineIndex += 2;
+        while (lineIndex < lines.length && lines[lineIndex].includes("|") && lines[lineIndex].trim()) {
+          bodyLines.push(lines[lineIndex]);
+          lineIndex += 1;
+        }
+        lineIndex -= 1;
+        html.push(tableToHtml(line, lines[lineIndex - bodyLines.length], bodyLines, shortcodeBlocks));
+      } else if (heading) {
         flushParagraph();
         closeList();
         const level = heading[1].length;
@@ -456,6 +687,30 @@
     }
   }
 
+  function escapeTableCell(value) {
+    return value.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>").trim();
+  }
+
+  function tableToMarkdown(table) {
+    const headerCells = Array.from(table.querySelectorAll("thead th"));
+    const firstBodyRow = table.querySelector("tbody tr");
+    const headers = headerCells.length
+      ? headerCells
+      : firstBodyRow
+        ? Array.from(firstBodyRow.children)
+        : [];
+    if (!headers.length) return "";
+
+    const rowMarkdown = (cells) => `| ${cells.map((cell) => escapeTableCell(inlineToMarkdown(cell))).join(" | ")} |`;
+    const delimiter = `| ${headers.map((cell) => {
+      const alignment = cell.dataset.align || cell.style.textAlign;
+      return alignment === "center" ? ":---:" : alignment === "right" ? "---:" : alignment === "left" ? ":---" : "---";
+    }).join(" | ")} |`;
+    const rows = Array.from(table.querySelectorAll("tbody tr"));
+    if (!headerCells.length && rows.length) rows.shift();
+    return [rowMarkdown(headers), delimiter, ...rows.map((row) => rowMarkdown(Array.from(row.children)))].join("\n");
+  }
+
   function htmlToMarkdown() {
     const blocks = [];
     for (const node of visualEditor.childNodes) {
@@ -480,6 +735,8 @@
           return `${marker} ${inlineToMarkdown(item).trim()}`;
         });
         blocks.push(items.join("\n"));
+      } else if (tag === "table") {
+        blocks.push(tableToMarkdown(node));
       } else if (tag === "hr") {
         blocks.push("---");
       } else if (tag === "div") {
@@ -532,6 +789,7 @@
     visualEditor.classList.toggle("hidden", isSource);
     sourceContainer.classList.toggle("hidden", !isSource);
     if (!isSource || isViewSource) hideShortcodeAutocomplete();
+    if (isSource) scheduleHideShortcodeInspector();
     sourceEditor.readOnly = isViewSource;
     visualEditor.contentEditable = isEdit ? "true" : "false";
     toolbar.classList.toggle("hidden", !isEdit);
@@ -548,6 +806,7 @@
     status.textContent = `${isView ? isViewSource ? "View plain text" : "View" : isEdit ? "Edit" : "Plain text"} mode${!isView && draftDirty ? " | Unsaved changes" : ""}`;
     (isSource ? sourceEditor : visualEditor).focus();
     restoreEditorLocation(location, isSource);
+    if (isEdit) requestAnimationFrame(updateBlockStyle);
   }
 
   function draftMarkdown() {
@@ -576,6 +835,38 @@
     visualEditor.focus();
     document.execCommand(command, false, value);
     scheduleEdit(htmlToMarkdown());
+    updateBlockStyle();
+  }
+
+  function updateBlockStyle() {
+    if (mode !== "edit") return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    let node = selection.anchorNode;
+    if (!node || (node !== visualEditor && !visualEditor.contains(node))) return;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const block = node.closest?.("h1, h2, h3, h4, h5, h6, blockquote, pre, p");
+    blockStyle.value = block ? block.tagName.toLowerCase() : "p";
+  }
+
+  function insertTable() {
+    visualEditor.focus();
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead><tbody><tr><td>Value</td><td>Value</td><td>Value</td></tr></tbody>";
+    const range = selectionRangeInsideVisualEditor();
+    if (range) {
+      range.deleteContents();
+      range.insertNode(table);
+      range.setStartAfter(table);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      visualEditor.appendChild(table);
+    }
+    scheduleEdit(htmlToMarkdown());
+    table.querySelector("th")?.focus();
   }
 
   function selectionRangeInsideVisualEditor() {
@@ -906,6 +1197,25 @@
   });
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
+    updateBlockStyle();
+  });
+  visualEditor.addEventListener("click", updateBlockStyle);
+  visualEditor.addEventListener("keyup", updateBlockStyle);
+  document.addEventListener("selectionchange", updateBlockStyle);
+  visualEditor.addEventListener("mouseover", (event) => {
+    const shortcode = event.target.closest?.(".hugo-shortcode");
+    if (!shortcode) return;
+    if (shortcode === inspectedShortcode && !shortcodeInspector.classList.contains("hidden")) {
+      showShortcodeInspector(shortcode, event.target);
+    } else {
+      scheduleShortcodeInspector(shortcode, event.target);
+    }
+  });
+  visualEditor.addEventListener("mouseout", (event) => {
+    const shortcode = event.target.closest?.(".hugo-shortcode");
+    if (!shortcode) return;
+    if (event.relatedTarget instanceof Node && shortcode.contains(event.relatedTarget)) return;
+    scheduleHideShortcodeInspector();
   });
   visualEditor.addEventListener("contextmenu", (event) => {
     if (mode !== "edit") return;
@@ -921,12 +1231,29 @@
       openShortcodeDialog(shortcode);
     }
   });
+  shortcodeInspector.addEventListener("mouseenter", () => {
+    clearTimeout(shortcodeInspectorHideTimer);
+  });
+  shortcodeInspector.addEventListener("mouseleave", scheduleHideShortcodeInspector);
+  closeShortcodeInspector.addEventListener("click", () => {
+    clearTimeout(shortcodeInspectorShowTimer);
+    clearTimeout(shortcodeInspectorHideTimer);
+    shortcodeInspector.classList.add("hidden");
+    inspectedShortcode = null;
+  });
+  window.addEventListener("resize", () => {
+    if (inspectedShortcode && !shortcodeInspector.classList.contains("hidden")) {
+      positionShortcodeInspector(inspectedShortcode);
+    }
+  });
 
   toolbar.querySelectorAll("[data-command]").forEach((button) => {
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", () => runCommand(button.dataset.command));
   });
   blockStyle.addEventListener("change", () => runCommand("formatBlock", blockStyle.value));
+  tableButton.addEventListener("mousedown", (event) => event.preventDefault());
+  tableButton.addEventListener("click", insertTable);
   linkButton.addEventListener("mousedown", (event) => {
     event.preventDefault();
     savedRange = selectionRangeInsideVisualEditor();
@@ -1038,6 +1365,14 @@
             }
           }
         }
+      }
+    } else if (message.type === "shortcodeInspectorSetting") {
+      shortcodeInspectorEnabled = message.enabled === true;
+      if (!shortcodeInspectorEnabled) {
+        clearTimeout(shortcodeInspectorShowTimer);
+        clearTimeout(shortcodeInspectorHideTimer);
+        shortcodeInspector.classList.add("hidden");
+        inspectedShortcode = null;
       }
     }
   });

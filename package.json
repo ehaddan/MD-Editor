@@ -2,7 +2,7 @@
   "name": "eric-haddan-markdown-editor",
   "displayName": "Markdown Reader & WYSIWYG Editor",
   "description": "Read and edit Markdown in plain text or WYSIWYG mode.",
-  "version": "0.7.6",
+  "version": "0.8.1",
   "publisher": "eric-haddan",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",
@@ -54,7 +54,17 @@
         "command": "ericHaddan.markdownEditor.open",
         "title": "Open with Markdown WYSIWYG Editor"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Markdown Reader & WYSIWYG Editor",
+      "properties": {
+        "ericHaddan.markdownEditor.enableShortcodeInspector": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show generated HTML, computed CSS, and matched theme CSS rules when hovering over rendered Hugo shortcodes."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -55,8 +55,21 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         sendDocument();
       }
     });
+    const configurationSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("ericHaddan.markdownEditor.enableShortcodeInspector", document.uri)) {
+        void webviewPanel.webview.postMessage({
+          type: "shortcodeInspectorSetting",
+          enabled: vscode.workspace
+            .getConfiguration("ericHaddan.markdownEditor", document.uri)
+            .get<boolean>("enableShortcodeInspector", false)
+        });
+      }
+    });
 
-    webviewPanel.onDidDispose(() => documentSubscription.dispose());
+    webviewPanel.onDidDispose(() => {
+      documentSubscription.dispose();
+      configurationSubscription.dispose();
+    });
 
     webviewPanel.webview.onDidReceiveMessage(async (message: unknown) => {
       if (!isEditorMessage(message)) {
@@ -192,6 +205,13 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const nonce = getNonce();
     const documentBaseUri = webview.asWebviewUri(vscode.Uri.file(`${path.dirname(document.uri.fsPath)}${path.sep}`));
     const shortcodeData = JSON.stringify(hugoContext?.shortcodes ?? []).replace(/</g, "\\u003c");
+    const shortcodeInspectorEnabled = vscode.workspace
+      .getConfiguration("ericHaddan.markdownEditor", document.uri)
+      .get<boolean>("enableShortcodeInspector", false);
+    const themeStyleData = JSON.stringify(hugoContext?.themeStyles.map((style) => ({
+      name: path.relative(hugoContext.rootUri.fsPath, style.uri.fsPath).replace(/\\/g, "/"),
+      css: style.css
+    })) ?? []).replace(/</g, "\\u003c");
     const shortcodeThemeCss = hugoContext
       ? hugoContext.themeStyles
         .map((style) => scopeThemeCss(rewriteThemeCssUrls(style.css, style.uri, hugoContext.rootUri, webview)))
@@ -242,6 +262,7 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <button class="icon-button" type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">&#8226;&#8801;</button>
       <button class="icon-button" type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list">1&#8801;</button>
       <button class="icon-button" type="button" data-command="insertHorizontalRule" title="Horizontal rule" aria-label="Horizontal rule">&#8212;</button>
+      <button id="tableButton" class="icon-button" type="button" title="Insert table" aria-label="Insert table">Table</button>
       <button id="linkButton" class="icon-button" type="button" title="Insert link" aria-label="Insert link">&#128279;</button>
       <button id="imageButton" class="icon-button" type="button" title="Insert image" aria-label="Insert image">&#128444;</button>
       <button id="shortcodeButton" class="hidden" type="button" title="Insert Hugo shortcode">Shortcode</button>
@@ -255,6 +276,24 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <div id="shortcodeAutocomplete" class="shortcode-autocomplete hidden" role="listbox" aria-label="Shortcode suggestions"></div>
     </div>
   </main>
+  <aside id="shortcodeInspector" class="shortcode-inspector hidden" aria-label="Shortcode debug inspector">
+    <header>
+      <strong id="shortcodeInspectorTitle">Shortcode Inspector</strong>
+      <button id="closeShortcodeInspector" class="icon-button" type="button" title="Close inspector" aria-label="Close inspector">&#10005;</button>
+    </header>
+    <section>
+      <h3>Generated HTML</h3>
+      <pre id="shortcodeInspectorHtml"></pre>
+    </section>
+    <section>
+      <h3 id="shortcodeInspectorCssTitle">Computed CSS</h3>
+      <pre id="shortcodeInspectorCss"></pre>
+    </section>
+    <section>
+      <h3>Matched Theme CSS Rules</h3>
+      <pre id="shortcodeInspectorRules"></pre>
+    </section>
+  </aside>
   <dialog id="linkDialog">
     <form method="dialog">
       <h2>Insert Link</h2>
@@ -319,6 +358,8 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   </dialog>
   <div id="status" class="status">View mode</div>
   <script nonce="${nonce}">window.hugoShortcodes = ${shortcodeData};</script>
+  <script nonce="${nonce}">window.hugoThemeStyles = ${themeStyleData};</script>
+  <script nonce="${nonce}">window.shortcodeInspectorEnabled = ${JSON.stringify(shortcodeInspectorEnabled)};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
@@ -517,8 +558,8 @@ async function findHugoThemeStyles(rootUri: vscode.Uri): Promise<HugoThemeStyle[
 
   const styles: HugoThemeStyle[] = [];
   let totalBytes = 0;
-  const maximumFileBytes = 512 * 1024;
-  const maximumTotalBytes = 2 * 1024 * 1024;
+  const maximumFileBytes = 4 * 1024 * 1024;
+  const maximumTotalBytes = 16 * 1024 * 1024;
 
   for (const uri of files) {
     try {
