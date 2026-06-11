@@ -2,7 +2,7 @@
   "name": "eric-haddan-markdown-editor",
   "displayName": "Markdown Reader & WYSIWYG Editor",
   "description": "Read and edit Markdown in plain text or WYSIWYG mode.",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "publisher": "eric-haddan",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",

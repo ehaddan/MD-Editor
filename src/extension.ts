@@ -256,11 +256,11 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <button class="icon-button" type="button" data-command="undo" title="Undo" aria-label="Undo">&#8630;</button>
       <button class="icon-button" type="button" data-command="redo" title="Redo" aria-label="Redo">&#8631;</button>
       <span class="divider"></span>
-      <button class="icon-button" type="button" data-command="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
-      <button class="icon-button" type="button" data-command="italic" title="Italic" aria-label="Italic"><em>I</em></button>
-      <button class="icon-button" type="button" data-command="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
-      <button class="icon-button" type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">&#8226;&#8801;</button>
-      <button class="icon-button" type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list">1&#8801;</button>
+      <button class="icon-button" type="button" data-command="bold" title="Bold" aria-label="Bold" aria-pressed="false"><strong>B</strong></button>
+      <button class="icon-button" type="button" data-command="italic" title="Italic" aria-label="Italic" aria-pressed="false"><em>I</em></button>
+      <button class="icon-button" type="button" data-command="strikeThrough" title="Strikethrough" aria-label="Strikethrough" aria-pressed="false"><s>S</s></button>
+      <button class="icon-button" type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list" aria-pressed="false">&#8226;&#8801;</button>
+      <button class="icon-button" type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list" aria-pressed="false">1&#8801;</button>
       <button class="icon-button" type="button" data-command="insertHorizontalRule" title="Horizontal rule" aria-label="Horizontal rule">&#8212;</button>
       <button id="tableButton" class="icon-button" type="button" title="Insert table" aria-label="Insert table">Table</button>
       <button id="linkButton" class="icon-button" type="button" title="Insert link" aria-label="Insert link">&#128279;</button>

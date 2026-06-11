@@ -806,7 +806,7 @@
     status.textContent = `${isView ? isViewSource ? "View plain text" : "View" : isEdit ? "Edit" : "Plain text"} mode${!isView && draftDirty ? " | Unsaved changes" : ""}`;
     (isSource ? sourceEditor : visualEditor).focus();
     restoreEditorLocation(location, isSource);
-    if (isEdit) requestAnimationFrame(updateBlockStyle);
+    if (isEdit) requestAnimationFrame(updateToolbarState);
   }
 
   function draftMarkdown() {
@@ -835,10 +835,10 @@
     visualEditor.focus();
     document.execCommand(command, false, value);
     scheduleEdit(htmlToMarkdown());
-    updateBlockStyle();
+    updateToolbarState();
   }
 
-  function updateBlockStyle() {
+  function updateToolbarState() {
     if (mode !== "edit") return;
     const selection = window.getSelection();
     if (!selection?.rangeCount) return;
@@ -847,6 +847,32 @@
     if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
     const block = node.closest?.("h1, h2, h3, h4, h5, h6, blockquote, pre, p");
     blockStyle.value = block ? block.tagName.toLowerCase() : "p";
+
+    const stateCommands = ["bold", "italic", "strikeThrough", "insertUnorderedList", "insertOrderedList"];
+    for (const command of stateCommands) {
+      const button = toolbar.querySelector(`[data-command="${command}"]`);
+      if (!button) continue;
+      let active = false;
+      try {
+        active = document.queryCommandState(command);
+      } catch {
+        active = false;
+      }
+      if (!active) {
+        const selector = command === "bold"
+          ? "strong, b"
+          : command === "italic"
+            ? "em, i"
+            : command === "strikeThrough"
+              ? "s, strike, del"
+              : command === "insertUnorderedList"
+                ? "ul"
+                : "ol";
+        active = Boolean(node.closest?.(selector));
+      }
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
   }
 
   function insertTable() {
@@ -1197,11 +1223,11 @@
   });
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
-    updateBlockStyle();
+    updateToolbarState();
   });
-  visualEditor.addEventListener("click", updateBlockStyle);
-  visualEditor.addEventListener("keyup", updateBlockStyle);
-  document.addEventListener("selectionchange", updateBlockStyle);
+  visualEditor.addEventListener("click", updateToolbarState);
+  visualEditor.addEventListener("keyup", updateToolbarState);
+  document.addEventListener("selectionchange", updateToolbarState);
   visualEditor.addEventListener("mouseover", (event) => {
     const shortcode = event.target.closest?.(".hugo-shortcode");
     if (!shortcode) return;
