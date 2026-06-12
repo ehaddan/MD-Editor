@@ -20,12 +20,12 @@ npm run package
 ```
 
 This produces a versioned VSIX such as
-`eric-haddan-markdown-editor-0.7.5.vsix`.
+`eric-haddan-markdown-editor-0.8.4.vsix`.
 
 Install the VSIX locally for a final test:
 
 ```powershell
-code --install-extension .\eric-haddan-markdown-editor-0.7.5.vsix
+code --install-extension .\eric-haddan-markdown-editor-0.8.4.vsix
 ```
 
 ## Publish
@@ -58,8 +58,8 @@ Use `minor` or `major` instead of `patch` when appropriate.
 - Confirm the publisher identifier in `package.json`.
 - Test the packaged VSIX in a normal VS Code window.
 - Review `README.md`, `CHANGELOG.md`, `LICENSE.txt`, and `PRIVACY.md`.
-- Add a public repository URL to `package.json` before publishing if the source
-  will be hosted publicly.
+- Confirm the repository, homepage, and issue links point to
+  <https://github.com/ehaddan/MD-Editor>.
 - Keep the Marketplace Personal Access Token private.
 - For automated publishing, prefer Microsoft Entra ID authentication instead
   of storing a long-lived Personal Access Token.

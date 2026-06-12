@@ -1,45 +1,70 @@
-# Markdown Reader & WYSIWYG Editor
+# Hugo Markdown WYSIWYG Editor
 
-A VS Code extension by **Eric Haddan** for reading and editing Markdown files in either a visual WYSIWYG editor or plain-text Markdown.
+Read and edit Markdown visually in VS Code while keeping the underlying file as
+portable Markdown. Built-in Hugo support discovers project shortcodes, previews
+their generated HTML, and applies theme CSS to rendered shortcode content.
 
-## Features
+## Highlights
 
-- Open Markdown in a read-only **View** mode by default.
-- Toggle between read-only visual and plain-text views without entering Edit mode.
-- Click the pencil button to begin editing, then close editing to save or discard the draft.
-- Format headings from level 1 through 6.
-- Apply bold, italic, strikethrough, quotes, code blocks, links, lists, and horizontal rules.
-- Insert links with text, URL, and optional tooltip title.
-- Select an image file and insert it using a relative path, with alt text, title, width, and alignment options.
-- Right-click an image while editing to reopen and change its image settings.
-- Preserve the approximate caret and scroll location when switching between visual and plain-text editing.
-- Keep the underlying document as portable Markdown.
+- Opens `.md` and `.markdown` files in a clean read-only visual view by default.
+- Switches between visual and syntax-highlighted plain-text views.
+- Provides draft-based WYSIWYG editing with save and discard confirmation.
+- Preserves approximate caret and scroll position when switching views.
+- Keeps toolbar block styles and inline-format buttons synchronized with the caret.
+- Supports headings, bold, italic, strikethrough, quotes, lists, links, images,
+  horizontal rules, fenced code blocks, and GitHub-style pipe tables.
+- Highlights fenced code using its language identifier while preserving the fence.
+- Inserts relative-path images with alt text, titles, width, and alignment options.
+- Reopens image settings by right-clicking an image in visual edit mode.
 
-## Hugo Projects
+## Hugo Shortcodes
 
-When a Markdown file is inside a trusted Hugo workspace, the editor automatically
-detects the nearest standard Hugo configuration file solely to support shortcode
-discovery.
+When the current Markdown file belongs to a trusted Hugo workspace, the editor:
 
-- Discovers shortcodes from project and active-theme `layouts/shortcodes` folders.
-- Adds an **Insert Shortcode** tool with detected properties for named, positional, and inner-content values.
-- Renders a best-effort visual preview for simple shortcode templates.
-- Right-clicks rendered shortcodes to reopen and edit their dynamic properties.
-- Adds a file browser for shortcode properties named `src`, inserting a path relative to the Markdown file.
-- Resolves shortcode-generated local images against the Markdown file, Hugo root, and Hugo `static` folder.
-- Displays an unresolved-image diagnostic when a shortcode image file cannot be found.
+- Discovers custom shortcodes from project and theme `layouts/shortcodes` folders.
+- Autocompletes standard and custom shortcode names in plain-text edit mode.
+- Autocompletes detected shortcode properties and inserts `property=""`.
+- Provides a dynamic visual dialog for named, positional, and inner-content values.
+- Adds a local file picker for shortcode properties named `src`.
+- Renders best-effort visual previews for shortcode templates.
+- Lets you right-click a rendered shortcode to edit its properties.
+- Resolves shortcode images against the Markdown file, Hugo root, and `static` folder.
+- Scans theme CSS files and applies matching styles only to rendered shortcodes.
+- Provides an optional hover inspector for generated HTML, computed CSS, and
+  matched theme CSS rules.
 
-This built-in preview does not run Hugo or compile Sass. Shortcode previews
-substitute common parameters into their templates without executing Go template
-logic, so complex shortcode rendering may differ from the generated site. The
-extension does not load project styles or project elements; it reads only
-shortcode definitions and local images referenced by rendered shortcodes.
+Enable the debugging inspector with the VS Code setting:
+
+```json
+"ericHaddan.markdownEditor.enableShortcodeInspector": true
+```
+
+Shortcode previews support common parameter substitutions, defaults, and simple
+conditional templates. They do not execute Hugo or compile Sass, so complex Go
+template logic may render differently from the generated site.
+
+## Tables And Code
+
+GitHub-style pipe tables render as editable visual tables and convert back to
+Markdown when saving or switching modes. Column alignment and escaped pipes are
+preserved.
+
+Fenced code blocks recognize their language identifier, apply visual syntax
+highlighting, and preserve the language when converting back to Markdown.
 
 ## Usage
 
-Open a `.md` or `.markdown` file. The rendered document opens in read-only **View** mode. Click **Edit** to make changes, then use the mode buttons at the top to switch views.
+Open a `.md` or `.markdown` file. Click the pencil button to begin editing, then
+use the toolbar or switch between Visual and Plain Text modes. Close editing to
+save or discard the draft.
 
-To use VS Code's built-in text editor instead, run **Reopen Editor With...** from the Command Palette and choose **Text Editor**.
+To use VS Code's built-in text editor, run **Reopen Editor With...** and choose
+**Text Editor**.
+
+## Support
+
+Report issues and request features at
+[github.com/ehaddan/MD-Editor/issues](https://github.com/ehaddan/MD-Editor/issues).
 
 ## Development
 
@@ -53,4 +78,4 @@ Press `F5` in VS Code to launch an Extension Development Host.
 ## Privacy
 
 This extension does not collect or transmit telemetry or personal information.
-The packaged extension includes the full privacy statement in `PRIVACY.md`.
+See [PRIVACY.md](PRIVACY.md) for details.

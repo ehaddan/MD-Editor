@@ -1,5 +1,51 @@
 # Change Log
 
+## 0.8.4
+
+- Updated Marketplace branding, description, categories, and search keywords for
+  Markdown and Hugo discovery.
+- Added repository, homepage, issue tracker, and Q&A links.
+- Expanded Marketplace documentation for current Markdown and Hugo features.
+
+## 0.8.3
+
+- Added language-aware visual syntax highlighting for fenced code blocks.
+- Preserved fenced-code language identifiers when switching modes and saving.
+
+## 0.8.2
+
+- Added active/depressed toolbar states for bold, italic, strikethrough, and lists.
+
+## 0.8.1
+
+- Added automatic Block Style detection based on the WYSIWYG caret position.
+
+## 0.8.0
+
+- Added editable GitHub-style pipe tables with alignment preservation.
+- Added a WYSIWYG table insertion tool.
+- Added shortcode-property autocomplete in plain-text edit mode.
+
+## 0.7.9
+
+- Made the shortcode hover inspector opt-in through VS Code settings.
+- Improved dark-mode rendering with transparent shortcode wrappers.
+
+## 0.7.8
+
+- Added matched theme CSS rule diagnostics to the shortcode inspector.
+- Increased supported theme stylesheet size limits.
+
+## 0.7.7
+
+- Added an interactive shortcode inspector for generated HTML and computed CSS.
+
+## 0.7.6
+
+- Added Hugo theme CSS loading scoped to rendered shortcode previews.
+- Added Markdown syntax highlighting and shortcode autocomplete in plain-text mode.
+- Removed shortcode bounding rectangles from display mode.
+
 ## 0.7.5
 
 - Removed generated HTML display when hovering over rendered shortcodes.

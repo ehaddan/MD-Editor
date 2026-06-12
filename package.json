@@ -1,8 +1,8 @@
 {
   "name": "eric-haddan-markdown-editor",
-  "displayName": "Markdown Reader & WYSIWYG Editor",
-  "description": "Read and edit Markdown in plain text or WYSIWYG mode.",
-  "version": "0.8.2",
+  "displayName": "Hugo Markdown WYSIWYG Editor",
+  "description": "Visual Markdown editor with WYSIWYG editing, Hugo shortcodes, theme CSS previews, tables, images, and syntax highlighting.",
+  "version": "0.8.4",
   "publisher": "eric-haddan",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",
@@ -10,20 +10,47 @@
   "author": {
     "name": "Eric Haddan"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ehaddan/MD-Editor.git"
+  },
+  "homepage": "https://github.com/ehaddan/MD-Editor#readme",
+  "bugs": {
+    "url": "https://github.com/ehaddan/MD-Editor/issues"
+  },
+  "qna": "https://github.com/ehaddan/MD-Editor/issues",
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other",
-    "Formatters"
+    "Programming Languages",
+    "Visualization",
+    "Other"
   ],
   "keywords": [
     "markdown",
+    "md",
+    "hugo",
     "wysiwyg",
-    "editor",
-    "preview",
-    "reader",
-    "md"
+    "shortcode",
+    "shortcodes",
+    "hugo editor",
+    "markdown editor",
+    "visual markdown",
+    "markdown preview",
+    "markdown reader",
+    "static site generator",
+    "front matter",
+    "table editor",
+    "pipe tables",
+    "documentation",
+    "docs",
+    "content editor",
+    "go template",
+    "theme css",
+    "image editor",
+    "syntax highlighting",
+    "autocomplete"
   ],
   "galleryBanner": {
     "color": "#14213d",
@@ -37,7 +64,7 @@
     "customEditors": [
       {
         "viewType": "ericHaddan.markdownEditor",
-        "displayName": "Markdown WYSIWYG Editor",
+        "displayName": "Hugo Markdown WYSIWYG Editor",
         "selector": [
           {
             "filenamePattern": "*.md"
@@ -52,11 +79,11 @@
     "commands": [
       {
         "command": "ericHaddan.markdownEditor.open",
-        "title": "Open with Markdown WYSIWYG Editor"
+        "title": "Open with Hugo Markdown WYSIWYG Editor"
       }
     ],
     "configuration": {
-      "title": "Markdown Reader & WYSIWYG Editor",
+      "title": "Hugo Markdown WYSIWYG Editor",
       "properties": {
         "ericHaddan.markdownEditor.enableShortcodeInspector": {
           "type": "boolean",

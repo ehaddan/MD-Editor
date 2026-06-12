@@ -1,7 +1,7 @@
 # Support
 
-For help, feature requests, or bug reports, use the **Q & A** section on the
-extension's Visual Studio Marketplace listing.
+For help, feature requests, or bug reports, open an issue at
+<https://github.com/ehaddan/MD-Editor/issues>.
 
 When reporting an issue, include:
 

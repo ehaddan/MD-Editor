@@ -112,8 +112,26 @@ main {
 }
 
 .visual-editor pre {
+  position: relative;
   padding: 12px;
   white-space: pre-wrap;
+}
+
+.visual-editor .code-keyword {
+  color: var(--vscode-symbolIcon-keywordForeground, #c586c0);
+}
+
+.visual-editor .code-string {
+  color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+}
+
+.visual-editor .code-comment {
+  color: var(--vscode-descriptionForeground, #6a9955);
+  font-style: italic;
+}
+
+.visual-editor .code-number {
+  color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
 }
 
 .visual-editor table {

@@ -496,6 +496,46 @@
     return `<table><thead><tr>${header}</tr></thead>${body ? `<tbody>${body}</tbody>` : ""}</table>`;
   }
 
+  const codeKeywords = {
+    javascript: ["async", "await", "break", "case", "catch", "class", "const", "continue", "default", "else", "export", "extends", "false", "finally", "for", "from", "function", "if", "import", "in", "let", "new", "null", "of", "return", "static", "super", "switch", "this", "throw", "true", "try", "typeof", "undefined", "var", "while", "yield"],
+    typescript: ["abstract", "any", "as", "async", "await", "boolean", "break", "case", "catch", "class", "const", "continue", "declare", "default", "else", "enum", "export", "extends", "false", "finally", "for", "from", "function", "if", "implements", "import", "in", "interface", "keyof", "let", "namespace", "never", "new", "null", "number", "of", "private", "protected", "public", "readonly", "return", "static", "string", "super", "switch", "this", "throw", "true", "try", "type", "typeof", "undefined", "unknown", "var", "void", "while"],
+    python: ["and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "False", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise", "return", "True", "try", "while", "with", "yield"],
+    csharp: ["abstract", "as", "async", "await", "base", "bool", "break", "case", "catch", "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "false", "finally", "float", "for", "foreach", "if", "in", "int", "interface", "internal", "is", "long", "namespace", "new", "null", "object", "override", "private", "protected", "public", "readonly", "return", "sealed", "static", "string", "struct", "switch", "this", "throw", "true", "try", "using", "var", "virtual", "void", "while"],
+    java: ["abstract", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue", "default", "do", "double", "else", "enum", "extends", "false", "final", "finally", "float", "for", "if", "implements", "import", "instanceof", "int", "interface", "long", "native", "new", "null", "package", "private", "protected", "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this", "throw", "throws", "transient", "true", "try", "void", "volatile", "while"]
+  };
+
+  function normalizeCodeLanguage(language) {
+    const normalized = language.toLowerCase();
+    return ({ js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript", py: "python", cs: "csharp", "c#": "csharp" })[normalized] || normalized;
+  }
+
+  function highlightCode(code, language) {
+    const normalized = normalizeCodeLanguage(language);
+    const keywords = codeKeywords[normalized] || [];
+    const keywordPattern = keywords.length ? new RegExp(`\\b(?:${keywords.join("|")})\\b`, "g") : null;
+    const tokenPattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|\b\d+(?:\.\d+)?\b)/g;
+    let output = "";
+    let cursor = 0;
+    for (const match of code.matchAll(tokenPattern)) {
+      const plain = code.slice(cursor, match.index);
+      output += keywordPattern
+        ? escapeHtml(plain).replace(keywordPattern, '<span class="code-keyword">$&</span>')
+        : escapeHtml(plain);
+      const token = match[0];
+      const className = token.startsWith("//") || token.startsWith("/*") || (normalized === "python" && token.startsWith("#"))
+        ? "code-comment"
+        : /^\d/.test(token)
+          ? "code-number"
+          : "code-string";
+      output += `<span class="${className}">${escapeHtml(token)}</span>`;
+      cursor = match.index + token.length;
+    }
+    const remaining = code.slice(cursor);
+    return output + (keywordPattern
+      ? escapeHtml(remaining).replace(keywordPattern, '<span class="code-keyword">$&</span>')
+      : escapeHtml(remaining));
+  }
+
   function markdownToHtml(markdown) {
     const shortcodeBlocks = [];
     const protectedMarkdown = markdown.replace(
@@ -511,6 +551,8 @@
     let listType = "";
     let inCode = false;
     let codeLines = [];
+    let codeLanguage = "";
+    let codeFence = "";
 
     const flushParagraph = () => {
       if (paragraph.length) {
@@ -527,15 +569,21 @@
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
       const line = lines[lineIndex];
-      if (line.startsWith("```")) {
+      const fence = line.match(/^\s{0,3}(`{3,}|~{3,})\s*([A-Za-z0-9_+.#-]*)?.*$/);
+      if (fence && (!inCode || fence[1][0] === codeFence[0] && fence[1].length >= codeFence.length)) {
         flushParagraph();
         closeList();
         if (inCode) {
-          html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+          const code = codeLines.join("\n");
+          html.push(`<pre data-language="${escapeAttribute(codeLanguage)}"><code class="${codeLanguage ? `language-${escapeAttribute(codeLanguage)}` : ""}">${highlightCode(code, codeLanguage)}</code></pre>`);
           codeLines = [];
           inCode = false;
+          codeLanguage = "";
+          codeFence = "";
         } else {
           inCode = true;
+          codeFence = fence[1];
+          codeLanguage = fence[2] || "";
         }
         continue;
       }
@@ -598,7 +646,8 @@
     }
 
     if (inCode) {
-      html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      const code = codeLines.join("\n");
+      html.push(`<pre data-language="${escapeAttribute(codeLanguage)}"><code class="${codeLanguage ? `language-${escapeAttribute(codeLanguage)}` : ""}">${highlightCode(code, codeLanguage)}</code></pre>`);
     }
     flushParagraph();
     closeList();
@@ -728,7 +777,7 @@
       } else if (tag === "blockquote") {
         blocks.push(content.split("\n").map((line) => `> ${line}`).join("\n"));
       } else if (tag === "pre") {
-        blocks.push(`\`\`\`\n${node.textContent || ""}\n\`\`\``);
+        blocks.push(`\`\`\`${node.dataset.language || ""}\n${node.textContent || ""}\n\`\`\``);
       } else if (tag === "ul" || tag === "ol") {
         const items = Array.from(node.children).map((item, index) => {
           const marker = tag === "ul" ? "-" : `${index + 1}.`;
