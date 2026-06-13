@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.8.5
+
+- Repositioned Marketplace branding around general Markdown editing with optional
+  Hugo support.
+- Updated display names, description, keywords, and README ordering.
+
 ## 0.8.4
 
 - Updated Marketplace branding, description, categories, and search keywords for

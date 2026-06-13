@@ -1,8 +1,8 @@
 {
   "name": "eric-haddan-markdown-editor",
-  "displayName": "Hugo Markdown WYSIWYG Editor",
-  "description": "Visual Markdown editor with WYSIWYG editing, Hugo shortcodes, theme CSS previews, tables, images, and syntax highlighting.",
-  "version": "0.8.4",
+  "displayName": "Markdown WYSIWYG Editor with Hugo Support",
+  "description": "Edit Markdown visually or as syntax-highlighted text, with tables, images, code blocks, and built-in Hugo shortcode support.",
+  "version": "0.8.5",
   "publisher": "eric-haddan",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",
@@ -30,27 +30,29 @@
   "keywords": [
     "markdown",
     "md",
-    "hugo",
-    "wysiwyg",
-    "shortcode",
-    "shortcodes",
-    "hugo editor",
     "markdown editor",
+    "wysiwyg",
     "visual markdown",
     "markdown preview",
     "markdown reader",
-    "static site generator",
-    "front matter",
+    "markdown viewer",
+    "md editor",
     "table editor",
     "pipe tables",
     "documentation",
     "docs",
     "content editor",
-    "go template",
-    "theme css",
     "image editor",
     "syntax highlighting",
-    "autocomplete"
+    "autocomplete",
+    "hugo",
+    "hugo editor",
+    "shortcode",
+    "shortcodes",
+    "front matter",
+    "static site generator",
+    "go template",
+    "theme css"
   ],
   "galleryBanner": {
     "color": "#14213d",
@@ -64,7 +66,7 @@
     "customEditors": [
       {
         "viewType": "ericHaddan.markdownEditor",
-        "displayName": "Hugo Markdown WYSIWYG Editor",
+        "displayName": "Markdown WYSIWYG Editor",
         "selector": [
           {
             "filenamePattern": "*.md"
@@ -79,11 +81,11 @@
     "commands": [
       {
         "command": "ericHaddan.markdownEditor.open",
-        "title": "Open with Hugo Markdown WYSIWYG Editor"
+        "title": "Open with Markdown WYSIWYG Editor"
       }
     ],
     "configuration": {
-      "title": "Hugo Markdown WYSIWYG Editor",
+      "title": "Markdown WYSIWYG Editor",
       "properties": {
         "ericHaddan.markdownEditor.enableShortcodeInspector": {
           "type": "boolean",

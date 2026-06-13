@@ -1,10 +1,11 @@
-# Hugo Markdown WYSIWYG Editor
+# Markdown WYSIWYG Editor with Hugo Support
 
-Read and edit Markdown visually in VS Code while keeping the underlying file as
-portable Markdown. Built-in Hugo support discovers project shortcodes, previews
-their generated HTML, and applies theme CSS to rendered shortcode content.
+A visual and plain-text Markdown editor for VS Code. Read and edit any `.md` or
+`.markdown` file while keeping the underlying document as portable Markdown.
+Optional Hugo project integration adds shortcode discovery, visual previews,
+theme CSS support, and autocomplete.
 
-## Highlights
+## Markdown Editing
 
 - Opens `.md` and `.markdown` files in a clean read-only visual view by default.
 - Switches between visual and syntax-highlighted plain-text views.
@@ -17,9 +18,10 @@ their generated HTML, and applies theme CSS to rendered shortcode content.
 - Inserts relative-path images with alt text, titles, width, and alignment options.
 - Reopens image settings by right-clicking an image in visual edit mode.
 
-## Hugo Shortcodes
+## Hugo Support
 
-When the current Markdown file belongs to a trusted Hugo workspace, the editor:
+No Hugo project is required. When the current Markdown file belongs to a trusted
+Hugo workspace, the editor additionally:
 
 - Discovers custom shortcodes from project and theme `layouts/shortcodes` folders.
 - Autocompletes standard and custom shortcode names in plain-text edit mode.
