@@ -2,7 +2,7 @@
   "name": "eric-haddan-markdown-editor",
   "displayName": "Markdown WYSIWYG Editor with Hugo Support",
   "description": "Edit Markdown visually or as syntax-highlighted text, with tables, images, code blocks, and built-in Hugo shortcode support.",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "publisher": "eric-haddan",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",

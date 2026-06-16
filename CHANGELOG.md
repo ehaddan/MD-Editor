@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.8.6
+
+- Added a Marketplace README screenshot showing the visual Markdown editor.
+
 ## 0.8.5
 
 - Repositioned Marketplace branding around general Markdown editing with optional
