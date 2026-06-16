@@ -5,7 +5,9 @@ A visual and plain-text Markdown editor for VS Code. Read and edit any `.md` or
 Optional Hugo project integration adds shortcode discovery, visual previews,
 theme CSS support, and autocomplete.
 
-![Markdown WYSIWYG Editor with Hugo Support in VS Code](images/markdown-wysiwyg-editor-screenshot.png)
+![Markdown WYSIWYG Editor in VS Code dark theme](images/markdown-wysiwyg-editor-screenshot.png)
+
+![Markdown WYSIWYG Editor in VS Code light theme](images/markdown-wysiwyg-editor-light-screenshot.png)
 
 ## Markdown Editing
 

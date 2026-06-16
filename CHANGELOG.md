@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.8.7
+
+- Added a light-theme Marketplace README screenshot.
+
 ## 0.8.6
 
 - Added a Marketplace README screenshot showing the visual Markdown editor.
