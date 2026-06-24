@@ -20,12 +20,12 @@ npm run package
 ```
 
 This produces a versioned VSIX such as
-`eric-haddan-markdown-editor-0.8.7.vsix`.
+`eric-haddan-markdown-editor-0.8.8.vsix`.
 
 Install the VSIX locally for a final test:
 
 ```powershell
-code --install-extension .\eric-haddan-markdown-editor-0.8.7.vsix
+code --install-extension .\eric-haddan-markdown-editor-0.8.8.vsix
 ```
 
 ## Publish

@@ -268,6 +268,13 @@ class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       <button id="shortcodeButton" class="hidden" type="button" title="Insert Hugo shortcode">Shortcode</button>
     </div>
   </header>
+  <div id="findBar" class="find-bar hidden" role="search">
+    <label>Find <input id="findInput" type="search" autocomplete="off" spellcheck="false" aria-label="Find text"></label>
+    <span id="findStatus" class="find-status">0 of 0</span>
+    <button id="findPrevious" type="button" title="Previous match" aria-label="Previous match">&#8593;</button>
+    <button id="findNext" type="button" title="Next match" aria-label="Next match">&#8595;</button>
+    <button id="closeFind" class="icon-button" type="button" title="Close find" aria-label="Close find">&#10005;</button>
+  </div>
   <main>
     <article id="visualEditor" class="editor visual-editor content markdown-body post-content" contenteditable="false" spellcheck="true" aria-label="Markdown document"></article>
     <div id="sourceContainer" class="source-container hidden">

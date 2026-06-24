@@ -42,6 +42,12 @@
   const shortcodeInspectorCss = document.getElementById("shortcodeInspectorCss");
   const shortcodeInspectorRules = document.getElementById("shortcodeInspectorRules");
   const closeShortcodeInspector = document.getElementById("closeShortcodeInspector");
+  const findBar = document.getElementById("findBar");
+  const findInput = document.getElementById("findInput");
+  const findStatus = document.getElementById("findStatus");
+  const findPrevious = document.getElementById("findPrevious");
+  const findNext = document.getElementById("findNext");
+  const closeFind = document.getElementById("closeFind");
   const status = document.getElementById("status");
   const hugoShortcodes = Array.isArray(window.hugoShortcodes) ? window.hugoShortcodes : [];
   const hugoThemeStyles = Array.isArray(window.hugoThemeStyles) ? window.hugoThemeStyles : [];
@@ -77,6 +83,8 @@
   let shortcodeInspectorShowTimer;
   let shortcodeInspectorHideTimer;
   let inspectedShortcode;
+  let findMatches = [];
+  let activeFindIndex = -1;
 
   function escapeHtml(value) {
     return value
@@ -154,6 +162,135 @@
     sourceHighlight.innerHTML = `${highlightMarkdown(sourceEditor.value)}\n`;
     sourceHighlight.scrollTop = sourceEditor.scrollTop;
     sourceHighlight.scrollLeft = sourceEditor.scrollLeft;
+  }
+
+  function clearVisualFindHighlights() {
+    for (const mark of Array.from(visualEditor.querySelectorAll("mark.find-match"))) {
+      mark.replaceWith(document.createTextNode(mark.textContent || ""));
+    }
+    visualEditor.normalize();
+  }
+
+  function updateFindStatus() {
+    findStatus.textContent = findMatches.length && activeFindIndex >= 0
+      ? `${activeFindIndex + 1} of ${findMatches.length}`
+      : "0 of 0";
+  }
+
+  function findTextNodes(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return node.parentElement?.closest("script, style, dialog, .shortcode-inspector")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    return nodes;
+  }
+
+  function highlightVisualFindMatches(query) {
+    clearVisualFindHighlights();
+    findMatches = [];
+    if (!query) {
+      updateFindStatus();
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    for (const node of findTextNodes(visualEditor)) {
+      const text = node.textContent || "";
+      let index = text.toLowerCase().indexOf(lowerQuery);
+      if (index < 0) continue;
+
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      while (index >= 0) {
+        if (index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, index)));
+        const mark = document.createElement("mark");
+        mark.className = "find-match";
+        mark.textContent = text.slice(index, index + query.length);
+        fragment.appendChild(mark);
+        findMatches.push(mark);
+        cursor = index + query.length;
+        index = text.toLowerCase().indexOf(lowerQuery, cursor);
+      }
+      if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
+      node.replaceWith(fragment);
+    }
+    activeFindIndex = findMatches.length ? 0 : -1;
+    focusFindMatch(0);
+  }
+
+  function sourceFindMatches(query) {
+    if (!query) return [];
+    const matches = [];
+    const lowerText = sourceEditor.value.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    let index = lowerText.indexOf(lowerQuery);
+    while (index >= 0) {
+      matches.push({ start: index, end: index + query.length });
+      index = lowerText.indexOf(lowerQuery, index + Math.max(query.length, 1));
+    }
+    return matches;
+  }
+
+  function runFind() {
+    const query = findInput.value;
+    if (mode === "source" || mode === "view-source") {
+      clearVisualFindHighlights();
+      findMatches = sourceFindMatches(query);
+      activeFindIndex = findMatches.length ? 0 : -1;
+      focusFindMatch(0);
+      return;
+    }
+    highlightVisualFindMatches(query);
+  }
+
+  function focusFindMatch(index) {
+    if (!findMatches.length) {
+      activeFindIndex = -1;
+      updateFindStatus();
+      return;
+    }
+    activeFindIndex = (index + findMatches.length) % findMatches.length;
+    if (mode === "source" || mode === "view-source") {
+      const match = findMatches[activeFindIndex];
+      sourceEditor.focus();
+      sourceEditor.setSelectionRange(match.start, match.end);
+      const lineHeight = Number.parseFloat(getComputedStyle(sourceEditor).lineHeight) || 20;
+      const line = sourceEditor.value.slice(0, match.start).split("\n").length - 1;
+      sourceEditor.scrollTop = Math.max(0, line * lineHeight - sourceEditor.clientHeight / 2);
+    } else {
+      for (const mark of findMatches) mark.classList.remove("active");
+      const match = findMatches[activeFindIndex];
+      match.classList.add("active");
+      match.scrollIntoView({ block: "center", inline: "nearest" });
+      const range = document.createRange();
+      range.selectNodeContents(match);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    updateFindStatus();
+  }
+
+  function openFind() {
+    findBar.classList.remove("hidden");
+    findInput.focus();
+    findInput.select();
+    runFind();
+  }
+
+  function closeFindBar() {
+    findBar.classList.add("hidden");
+    findInput.value = "";
+    findMatches = [];
+    activeFindIndex = -1;
+    clearVisualFindHighlights();
+    updateFindStatus();
+    (mode === "source" || mode === "view-source" ? sourceEditor : visualEditor).focus();
   }
 
   function elementDebugLabel(element) {
@@ -668,10 +805,44 @@
     };
   }
 
+  function frontMatterTitle(frontMatterValue) {
+    if (!frontMatterValue) return "";
+    const normalized = frontMatterValue.replace(/\r\n/g, "\n");
+    const yaml = normalized.startsWith("---\n");
+    const toml = normalized.startsWith("+++\n");
+    if (!yaml && !toml) return "";
+    const pattern = yaml
+      ? /(?:^|\n)\s*title\s*:\s*(?:"([^"]*)"|'([^']*)'|([^\n#]*))/i
+      : /(?:^|\n)\s*title\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\n#]*))/i;
+    const match = normalized.match(pattern);
+    return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+  }
+
+  function escapeFrontMatterTitle(value) {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function updateFrontMatterTitle(frontMatterValue, title) {
+    if (!frontMatterValue) return frontMatterValue;
+    const normalized = frontMatterValue.replace(/\r\n/g, "\n");
+    const delimiter = normalized.startsWith("---\n") ? "---" : normalized.startsWith("+++\n") ? "+++" : "";
+    if (!delimiter) return frontMatterValue;
+    const separator = delimiter === "---" ? ":" : "=";
+    const titleLine = `title${separator} "${escapeFrontMatterTitle(title)}"`;
+    const titlePattern = delimiter === "---"
+      ? /^(\s*)title\s*:.*$/im
+      : /^(\s*)title\s*=.*$/im;
+    if (titlePattern.test(normalized)) {
+      return normalized.replace(titlePattern, (_match, indent) => `${indent}${titleLine}`);
+    }
+    return normalized.replace(`${delimiter}\n`, `${delimiter}\n${titleLine}\n`);
+  }
+
   function renderVisual(markdown) {
     const parts = splitFrontMatter(markdown);
     frontMatter = parts.frontMatter;
-    visualEditor.innerHTML = markdownToHtml(parts.body);
+    const title = frontMatterTitle(frontMatter);
+    visualEditor.innerHTML = `${title ? `<h1 class="front-matter-title" data-front-matter-title="true">${escapeHtml(title)}</h1>` : ""}${markdownToHtml(parts.body)}`;
     refreshImagePreviews();
   }
 
@@ -761,6 +932,10 @@
   }
 
   function htmlToMarkdown() {
+    const titleElement = visualEditor.querySelector("[data-front-matter-title]");
+    const nextFrontMatter = titleElement
+      ? updateFrontMatterTitle(frontMatter, titleElement.textContent.trim())
+      : frontMatter;
     const blocks = [];
     for (const node of visualEditor.childNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -769,6 +944,7 @@
         continue;
       }
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      if (node.dataset.frontMatterTitle === "true") continue;
 
       const tag = node.tagName.toLowerCase();
       const content = inlineToMarkdown(node).trim();
@@ -795,7 +971,7 @@
       }
     }
     const body = blocks.join("\n\n").replace(/\n{3,}/g, "\n\n");
-    return frontMatter ? `${frontMatter}${body}` : body;
+    return nextFrontMatter ? `${nextFrontMatter}${body}` : body;
   }
 
   function scheduleEdit(markdown) {
@@ -856,6 +1032,7 @@
     (isSource ? sourceEditor : visualEditor).focus();
     restoreEditorLocation(location, isSource);
     if (isEdit) requestAnimationFrame(updateToolbarState);
+    if (!findBar.classList.contains("hidden")) requestAnimationFrame(runFind);
   }
 
   function draftMarkdown() {
@@ -1239,6 +1416,7 @@
       scheduleEdit(sourceEditor.value);
       renderShortcodeAutocomplete();
     }
+    if (!findBar.classList.contains("hidden")) runFind();
   });
   sourceEditor.addEventListener("scroll", () => {
     refreshSourceHighlight();
@@ -1273,6 +1451,7 @@
   visualEditor.addEventListener("input", () => {
     if (!applyingExternalChange) scheduleEdit(htmlToMarkdown());
     updateToolbarState();
+    if (!findBar.classList.contains("hidden")) runFind();
   });
   visualEditor.addEventListener("click", updateToolbarState);
   visualEditor.addEventListener("keyup", updateToolbarState);
@@ -1321,6 +1500,28 @@
       positionShortcodeInspector(inspectedShortcode);
     }
   });
+  window.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      openFind();
+    } else if (event.key === "Escape" && !findBar.classList.contains("hidden")) {
+      event.preventDefault();
+      closeFindBar();
+    }
+  });
+  findInput.addEventListener("input", runFind);
+  findInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      focusFindMatch(activeFindIndex + (event.shiftKey ? -1 : 1));
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeFindBar();
+    }
+  });
+  findPrevious.addEventListener("click", () => focusFindMatch(activeFindIndex - 1));
+  findNext.addEventListener("click", () => focusFindMatch(activeFindIndex + 1));
+  closeFind.addEventListener("click", closeFindBar);
 
   toolbar.querySelectorAll("[data-command]").forEach((button) => {
     button.addEventListener("mousedown", (event) => event.preventDefault());

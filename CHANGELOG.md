@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.8.8
+
+- Added visual support for Hugo/YAML front matter `title` values.
+- Added an in-editor Find bar opened with `Ctrl+F`.
+
 ## 0.8.7
 
 - Added a light-theme Marketplace README screenshot.

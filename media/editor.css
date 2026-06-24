@@ -58,11 +58,57 @@ button.active {
 }
 
 .mode-switch,
-.toolbar {
+.toolbar,
+.find-bar {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+}
+
+.find-bar {
+  position: sticky;
+  z-index: 9;
+  top: 45px;
+  justify-content: flex-end;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editor-background);
+}
+
+.find-bar label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.find-bar input {
+  width: min(280px, 45vw);
+  height: 28px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 3px;
+  padding: 4px 7px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  font: inherit;
+}
+
+.find-status {
+  min-width: 48px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  text-align: center;
+}
+
+.find-match {
+  border-radius: 2px;
+  color: inherit;
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+}
+
+.find-match.active {
+  outline: 1px solid var(--vscode-editor-findMatchBorder, var(--vscode-focusBorder));
+  background: var(--vscode-editor-findMatchBackground, rgba(234, 92, 0, 0.55));
 }
 
 .divider {
@@ -95,6 +141,10 @@ main {
 .visual-editor h2 {
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.visual-editor .front-matter-title {
+  margin-top: 0;
 }
 
 .visual-editor blockquote {
